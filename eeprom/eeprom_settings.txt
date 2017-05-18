@@ -2,7 +2,7 @@
 # EEPROM settings text file
 #
 # Edit this file for your particular board and run through eepmake tool,
-# then use eepflash tool to write to attached HAT ID EEPROM 
+# then use eepflash tool to write to attached HAT ID EEPROM
 #
 # Tools available:
 #  eepmake   Parses EEPROM text file and creates binary .eep file
@@ -50,7 +50,7 @@ gpio_hysteresis 0
 # 1 = board back-powers and can supply the Pi with a minimum of 1.3A
 # 2 = board back-powers and can supply the Pi with a minimum of 2A
 # 3 = reserved
-# If back_power=2 then USB high current mode will be automatically 
+# If back_power=2 then USB high current mode will be automatically
 # enabled on the Pi
 back_power 0
 
@@ -62,16 +62,16 @@ back_power 0
 
 #         GPIO  FUNCTION  PULL
 #         ----  --------  ----
-#setgpio  2     INPUT     DEFAULT
-#setgpio  3     INPUT     DEFAULT
+setgpio  2     ALT0     DEFAULT
+setgpio  3     ALT0     DEFAULT
 #setgpio  4     INPUT     DEFAULT
 #setgpio  5     INPUT     DEFAULT
 #setgpio  6     INPUT     DEFAULT
 #setgpio  7     INPUT     DEFAULT
-#setgpio  8     INPUT     DEFAULT
-#setgpio  9     INPUT     DEFAULT
-#setgpio  10    INPUT     DEFAULT
-#setgpio  11    INPUT     DEFAULT
+setgpio  8     ALT0     NONE
+setgpio  9     ALT0     NONE
+setgpio  10    ALT0     NONE
+setgpio  11    ALT0     NONE
 #setgpio  12    INPUT     DEFAULT
 #setgpio  13    INPUT     DEFAULT
 #setgpio  14    INPUT     DEFAULT
@@ -83,8 +83,8 @@ back_power 0
 #setgpio  20    INPUT     DEFAULT
 #setgpio  21    INPUT     DEFAULT
 #setgpio  22    INPUT     DEFAULT
-#setgpio  23    INPUT     DEFAULT
-#setgpio  24    INPUT     DEFAULT
-#setgpio  25    INPUT     DEFAULT
+setgpio  23    INPUT     NONE
+setgpio  24    INPUT     NONE
+setgpio  25    OUTPUT     NONE
 #setgpio  26    INPUT     DEFAULT
 #setgpio  27    INPUT     DEFAULT
