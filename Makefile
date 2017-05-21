@@ -5,7 +5,7 @@ MCU_TARGET		= attiny88
 
 OPTIMIZE		= -Os -g
 # disable debugging code and optimizations
-#OPTIMIZE		= -g0 -DNDEBUG
+#OPTIMIZE		= -Os -g0 -DNDEBUG
 
 CC			= avr-gcc
 
