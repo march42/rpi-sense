@@ -6,3 +6,8 @@ src
 *.elf
 *.map
 *.srec
+
+# ATmel Studio
+.vs/
+Debug/
+Release/

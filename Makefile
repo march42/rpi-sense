@@ -3,14 +3,16 @@ OBJ			= main.o rpi-sense.o
 
 MCU_TARGET		= attiny88
 
-OPTIMIZE		= -Os
+OPTIMIZE		= -Os -g
+# disable debugging code and optimizations
+#OPTIMIZE		= -g0 -DNDEBUG
 
 CC			= avr-gcc
 
 # Override is only needed by avr-lib build system.
 
-override ASFLAGS	= -Wall -mmcu=$(MCU_TARGET)
-override CFLAGS		= -g -Wall $(OPTIMIZE) -mmcu=$(MCU_TARGET) $(DEFS)
+override ASFLAGS	= -Wall $(OPTIMIZE) -mmcu=$(MCU_TARGET)
+override CFLAGS		= -Wall $(OPTIMIZE) -mmcu=$(MCU_TARGET) $(DEFS)
 override LDFLAGS	= -Wl,-Map,$(PRG).map
 
 OBJCOPY        = avr-objcopy
