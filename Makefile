@@ -3,16 +3,20 @@ OBJ			= main.o rpi-sense.o
 
 MCU_TARGET		= attiny88
 
+ifeq ($(DEBUG),)
 OPTIMIZE		= -Os -g
+else
 # disable debugging code and optimizations
-#OPTIMIZE		= -Os -g0 -DNDEBUG
+OPTIMIZE		= -Os -g0 -DNDEBUG
+endif
 
 CC			= avr-gcc
 
-# Override is only needed by avr-lib build system.
+CDEFINES	+= -DUSE_SLEEP
 
-override ASFLAGS	= -Wall $(OPTIMIZE) -mmcu=$(MCU_TARGET)
-override CFLAGS		= -Wall $(OPTIMIZE) -mmcu=$(MCU_TARGET) $(DEFS)
+# Override is only needed by avr-lib build system.
+override ASFLAGS	= -Wall $(OPTIMIZE) $(CDEFINES) -mmcu=$(MCU_TARGET)
+override CFLAGS		= -Wall $(OPTIMIZE) $(CDEFINES) -mmcu=$(MCU_TARGET) $(DEFS)
 override LDFLAGS	= -Wl,-Map,$(PRG).map
 
 OBJCOPY        = avr-objcopy
@@ -29,8 +33,8 @@ rpi-sense.o: rpi-sense.S
 
 .PHONY: clean
 clean:
-	rm -rf *.o $(PRG).elf *.eps *.png *.pdf *.bak 
-	rm -rf *.lst *.map $(EXTRA_CLEAN_FILES)
+	-rm -rf *.o $(PRG).elf
+	-rm -rf *.lst *.map $(EXTRA_CLEAN_FILES)
 
 lst:  $(PRG).lst
 
@@ -80,6 +84,7 @@ esrec: $(PRG)_eeprom.srec
 FIG2DEV                 = fig2dev
 EXTRA_CLEAN_FILES       = *.hex *.bin *.srec
 
+EXTRA_CLEAN_FILES		+= *.eps *.png *.pdf
 dox: eps png pdf
 
 eps: $(PRG).eps

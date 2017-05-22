@@ -78,7 +78,7 @@
     </ToolchainSettings>
     <UsesExternalMakeFile>True</UsesExternalMakeFile>
     <OutputDirectory>$(MSBuildProjectDirectory)\</OutputDirectory>
-    <BuildTarget>OPTIMIZE="-Os -g0 -DNDEBUG" all</BuildTarget>
+    <BuildTarget>all</BuildTarget>
     <CleanTarget>clean</CleanTarget>
     <ExternalMakeFilePath>$(MSBuildProjectDirectory)\Makefile</ExternalMakeFilePath>
   </PropertyGroup>
@@ -119,7 +119,7 @@
     </ToolchainSettings>
     <UsesExternalMakeFile>True</UsesExternalMakeFile>
     <OutputDirectory>$(MSBuildProjectDirectory)\</OutputDirectory>
-    <BuildTarget>OPTIMIZE="-Os -g" all</BuildTarget>
+    <BuildTarget>all DEBUG=1</BuildTarget>
     <CleanTarget>clean</CleanTarget>
     <ExternalMakeFilePath>$(MSBuildProjectDirectory)\Makefile</ExternalMakeFilePath>
   </PropertyGroup>
@@ -130,6 +130,11 @@
     <Compile Include="rpi-sense.S">
       <SubType>compile</SubType>
     </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Makefile">
+      <SubType>compile</SubType>
+    </None>
   </ItemGroup>
   <Import Project="$(AVRSTUDIO_EXE_PATH)\\Vs\\Compiler.targets" />
 </Project>
