@@ -277,18 +277,22 @@ int main(void)
 		wdt_reset();		// reset watchdog timer
 		sei();				// Set Enable global Interrupts
 
+#ifdef UNUSED_CODE
 		while(0 != i2c_busy)
 		{
 			//	just wait for I2C operation to finish
 			delay(200);		// (clkT0=8kHz, 200/8000=1/40s =25ms
 		}
+#endif
 
 		//clear_gain();
+#ifdef UNUSED_CODE
 		if(0 == redrawleds)
 		{
 			check_keys();	// skip LED update and only check joystick
 		}
 		else
+#endif
 		{
 			draw_loop();	// copy pixels to LED shift register
 			// draw_loop always finishes with check_keys
@@ -315,6 +319,7 @@ int main(void)
 		registers[pos++]	= SMCR;
 #endif	// NDEBUG
 
+#ifdef UNUSED_CODE
 		if(0 == i2c_busy && 0 == redrawleds)
 		{
 			// only if I2C operation ended and redraw unnecessary
@@ -325,6 +330,7 @@ int main(void)
 			_NOP();
 			_NOP();			// just to be sure a little delay after wake up from SLEEP
 		}
+#endif
 	}
 
 	return(0);	// hopefully we never reach this
