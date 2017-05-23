@@ -37,18 +37,6 @@ PARAM	= 24
 PWM		= 25
 I2C_OFF	= 26	; XL
 
-.equiv I2C_WAI	, 0xf0
-.equiv I2C_VER	, 0xf1
-.equiv I2C_KEYS	, 0xf2
-.equiv I2C_EE_WP, 0xf3
-.equiv I2C_WDC	, 0xf6
-.equiv I2C_ID	, 's'
-#ifndef	NDEBUG
-.equiv VERSION	, 0xA1	; debug version
-#else
-.equiv VERSION	, 0x01
-#endif
-
 ; PORTA
 .equiv	LSM_INT_M	, PA0
 .equiv	LSM_INT1_AG	, PA1
@@ -108,15 +96,23 @@ ldone\reg:
 .global TWI_vect
 .global	check_keys
 
-.extern pixels
-#ifndef NDEBUG
 .extern	registers
-#endif
-.extern keys
-.extern	watchdog
 .extern i2c_reg
 .extern i2c_busy
 .extern redrawleds
+
+.equiv	I2C_PIXELS	, 0x00
+.equiv	pixels		, (registers + I2C_PIXELS)
+.equiv	I2C_WAI		, 0xf0
+.equiv	I2C_ID		, (registers + I2C_WAI)
+.equiv	I2C_VER		, 0xf1
+.equiv	VERSION		, (registers + I2C_VER)
+.equiv	I2C_KEYS	, 0xf2
+.equiv	keys		, (registers + I2C_KEYS)
+.equiv	I2C_EE_WP	, 0xf3
+.equiv	eewp		, (registers + I2C_EE_WP)
+.equiv	I2C_WDC		, 0xf6
+.equiv	watchdog	, (registers + I2C_WDC)
 
 .section .text
 
@@ -126,7 +122,6 @@ ldone\reg:
 ;DI2C/XL (r26) - Address
 .func	TWI_vect
 TWI_vect:	// ISR, global interrupts disabled on entry
-	CLI		; clear interrupt enable flag
 	WDR		; reset watchdog timer
 	; save registers
 	PUSH	PARAM
@@ -136,8 +131,9 @@ TWI_vect:	// ISR, global interrupts disabled on entry
 	PUSH	I2C_OFF
 	IN		PWM, _SFR_IO_ADDR(SREG)
 	; set I2C busy flag
-	LDI		PARAM, 1
-	STS		i2c_busy, PARAM				; i2c_busy=1
+	LDS		PARAM, i2c_busy				; load i2c_busy flags
+	ORI		PARAM, 1					; i2c_busy |= 1
+	STS		i2c_busy, PARAM				; store i2c_busy flags
 	LDS		I2C_OFF, i2c_reg			; I2C_OFF holds previous register address
 	; check TWSR status register
 	LDS		PARAM, TWSR					; load status register
@@ -146,7 +142,7 @@ TWI_vect:	// ISR, global interrupts disabled on entry
 	;TW_NO_INFO	; no state information available
 	// slave transmitter
 	CPI		PARAM, TW_ST_SLA_ACK		; SLA+R received, ACK returned
-	BREQ	ltsend
+	BREQ	ltack						; next DATA is register address
 	CPI		PARAM, TW_ST_DATA_ACK		; data transmitted, ACK received
 	BREQ	ltsend
 	CPI		PARAM, TW_ST_DATA_NACK		; data transmitted, NACK received
@@ -160,7 +156,7 @@ TWI_vect:	// ISR, global interrupts disabled on entry
 	CPI 	PARAM, TW_SR_DATA_NACK		; data received, NACK returned
 	BREQ	TWI_stop
 	CPI		PARAM, TW_SR_SLA_ACK		; SLA+W received, ACK returned
-	BREQ	lrack
+	BREQ	lrack						; next DATA is register address
 	CPI 	PARAM, TW_SR_STOP			; stop or repeated start condition received while selected
 	BREQ	TWI_stop
 	;CPI 	PARAM, TW_SR_ARB_LOST_GCALL_ACK	; arbitration lost in SLA+RW, general call received, ACK returned
@@ -171,17 +167,59 @@ TWI_vect:	// ISR, global interrupts disabled on entry
 	; without TWEA set the next transaction will be NACKed
 	LDI		PARAM,  (0<<TWEA) | (1<<TWEN) | (1<<TWIE) | (1<<TWINT)
 	RJMP	ldone
-ltsend:		RJMP	TWI_read			; transmit data to master
-lreceive:	RJMP	TWI_write			; receive data from master
-ltack:	; SLA+R, ACK sent
+
 lrack:	; SLA+W, ACK sent
-	LDI		PARAM, 0xff					; Address = 0xff
-	STS		i2c_reg, PARAM				; 0xFF is marker for register address receive
+	LDS		PARAM, i2c_busy				; load i2c_busy flags
+	SBI		PARAM, 2					; set write transaction flag
+	RJMP	.+4							; skip LDS 4byte instruction
+ltack:	; SLA+R, ACK sent
+	LDS		PARAM, i2c_busy				; load i2c_busy flags
+	SBI		PARAM, 1					; set next DATA is address flag
+	STS		i2c_busy, PARAM				; store i2c_busy flags
 	LDI		PARAM,  (1<<TWEA) | (1<<TWEN) | (1<<TWIE) | (1<<TWINT)
 	RJMP	ldone
 ltdnack:	; NACK received
 	LDI		PARAM,  (1<<TWEA) | (1<<TWEN) | (1<<TWIE) | (1<<TWINT)
 	RJMP	ldone
+
+ltsend:		; DATA sent
+	RJMP	TWI_read					; transmit data to master
+lreceive:	; DATA received
+	LDS		PARAM, i2c_busy				; load i2c_busy flags
+	SBIS	PARAM, 1					; skip if DATA is address
+	RJMP	TWI_write					; receive data from master
+lraddress:	; DATA==address
+	LDI		I2C_OFF, 1					; set i2c_busy flag
+	STS		i2c_busy, I2C_OFF			; store i2c_busy=1 flag, following data is real DATA
+	LDS		I2C_OFF, TWDR				; load DATA - register address
+	STS		i2c_reg, I2C_OFF			; address = DATA
+	; now address could be check with available addresses and TWEA disabled if unknown address
+	CPI		I2C_OFF, (8*8*3)			; address<(8*8*3) pixels buffer
+	BRLO	lrsregOK					; address valid
+#ifndef NDEBUG
+	CPI		I2C_OFF, 0xE0				; address < 0xE0 (&& >=192) debug registers
+#else
+	CPI		I2C_OFF, I2C_WAI			; address < 0xF0 (&& >=192) Who-Am-I
+#endif
+	BRLO	lrsregNOK					; address invalid
+	; now address (>= 0xE0/F0) must be checked for read/write
+	SBIS	PARAM, 2					; skip if write transaction flag is set
+	RJMP	lrsregread					; read is possible for all registers
+	; check write address
+	CPI		I2C_OFF, I2C_EE_WP			; address==0xF3 EEPROM write protection
+	BREQ	lrsregOK					; address valid
+	RJMP	lrsregNOK					; address invalid
+lrsregread:
+	CPI		I2C_OFF, I2C_WDC +1			; address<=0xF6 watchdog counter
+	BRLO	lrsregOK					; address invalid
+lrsregNOK:
+	; for real NACK TWEA=0 must be set to disable ACK
+	LDI		PARAM,  (0<<TWEA) | (1<<TWEN) | (1<<TWIE) | (1<<TWINT)
+	RJMP	ldone						; return and continue at ldone
+lrsregOK:
+	LDI		PARAM,  (1<<TWEA) | (1<<TWEN) | (1<<TWIE) | (1<<TWINT)
+	RJMP	ldone						; return and continue at ldone
+
 TWI_NACK:	; send NACK on next receive
 	LDI		PARAM,  (0<<TWEA) | (1<<TWEN) | (1<<TWIE) | (1<<TWINT)
 	RJMP	ldone
@@ -203,7 +241,6 @@ TWI_stop:
 ldone:
 	STS		TWCR, PARAM					; load PARAM to TWCR
 	WDR		; reset watchdog timer
-	SEI		; set interrupt enable flag
 	; restore registers
 	OUT		_SFR_IO_ADDR(SREG), PWM
 	POP		I2C_OFF
@@ -218,85 +255,47 @@ ldone:
 TWI_read:
 	; read data @I2C_OFF and write to TWDR, return new TWCR value in PARAM
 	CPI     I2C_OFF, 192				; if address<192
-	BRLO    ltspixel
+	BRLO    ltsreg
 
 #ifndef	NDEBUG
 	CPI		I2C_OFF, 0xE0				; registers 0xE0-0xEB
 	BRLO	ltsnack						; <0xE0
 	CPI		I2C_OFF, 0xF0
-	BRLO	ltsregisters				; 0xE0 <= I2C_OFF <= 0xEF
+	BRLO	ltsreg						; 0xE0 <= I2C_OFF <= 0xEF
 #endif
 
-	CPI     I2C_OFF, I2C_WAI			; if address==I2C_WAI
-	BREQ    ltswai
-	CPI     I2C_OFF, I2C_VER			; if address==I2C_VER
-	BREQ    ltsver
 	CPI     I2C_OFF, I2C_KEYS			; if address==I2C_KEYS
+	BRLO	ltsreg						; address < I2C_KEYS
 	BREQ    ltskeys
 	CPI     I2C_OFF, I2C_EE_WP			; if address==I2C_EE_WP
 	BREQ    ltsee
-	CPI     I2C_OFF, I2C_WDC			; if address==I2C_WDC
-	BREQ    ltswdc
+	CPI     I2C_OFF, I2C_WDC +1			; if address<=I2C_WDC
+	BRLO    ltsreg						; address <= I2C_WDC
 ltsnack:
-	LDI		PARAM, 0xff
-	STS		TWDR, PARAM
+	STS		TWDR, I2C_OFF					; simply send back address
+	INC     I2C_OFF							; increment offset
+	STS     i2c_reg, I2C_OFF				; store offset for next transaction
 	; for real NACK TWEA=0 must be set to disable ACK
 	RJMP	ltdone
-ltswai:		// WHO-AM-I
-	LDI     PARAM, I2C_ID
-	STS     TWDR, PARAM
-	RJMP    ltdone
-ltsver:		// VERSION
-	LDI     PARAM, VERSION
-	STS     TWDR, PARAM
-	RJMP    ltdone
 ltskeys:	// joystick
 	CBI     _SFR_IO_ADDR(PORTB), KEYS_INT	; clear KEYS_INT flag on read
-	LDS		PARAM, keys
-	STS     TWDR, PARAM
-	RJMP    ltdone
+	RJMP    ltsreg
 ltsee:		// EEPROM write protection
-	LDI     PARAM, 0
+	CLR		I2C_OFF							; clear
 	SBIS    _SFR_IO_ADDR(PORTB), EE_WP		; skip if EE_WP output set
-	LDI     PARAM, 1
-	STS     TWDR, PARAM						; PARAM=(PORTB,EE_WP)
+	LDI     I2C_OFF, 1						; set 1 if output active-low - write protection disabled
+	STS		eewp, I2C_OFF					; store value to buffers
+	STS     TWDR, I2C_OFF					; PARAM=(PORTB,EE_WP)
 	RJMP    ltdone
-ltswdc:		// watchdog interrupt counter
-	LDS		PARAM, watchdog
-	STS     TWDR, PARAM
+ltsreg:		; send from register buffer
+	LDI     YL, lo8(registers)				; load low byte buffer addres
+	LDI     YH, hi8(registers)				; load high byte buffer address
+	ADD     YL, I2C_OFF						; add offset to buffer address
+	CLR     I2C_OFF							; clear temporary variable
+	ADC     YH, I2C_OFF						; add 0 and CARRY flag to high byte of address
+	LD      I2C_OFF, Y						; load from register buffer address
+	STS     TWDR, I2C_OFF					; store to data register
 	RJMP    ltdone
-ltspixel:
-	LDI     YL, lo8(pixels)
-	LDI     YH, hi8(pixels)
-	ADD     YL, I2C_OFF
-	INC     I2C_OFF
-	STS     i2c_reg, I2C_OFF
-	CLR     I2C_OFF
-	ADC     YH, I2C_OFF
-	LD      I2C_OFF, Y
-	STS     TWDR, I2C_OFF
-	RJMP    ltdone
-
-#ifndef	NDEBUG
-ltsregisters:
-	; load Y register with buffer address
-	LDI     YL, lo8(registers)
-	LDI     YH, hi8(registers)
-	; calculate buffer offset
-	SUBI	I2C_OFF, 0xE0			; I2C_OFF -= 0xE0 (I2C register address)
-	ADD     YL, I2C_OFF				; add offset to Y register
-	; add CARRY to YH
-	BRCC	.+2						; skip if CARRY cleared
-	INC		YH
-	; load register from buffer
-	LD		I2C_OFF, Y				; load address to register
-	STS		TWDR, I2C_OFF			; store register to TWDR
-	; increment register address
-	SUBI	I2C_OFF, 0x1F			; add I2C register address +1 (+0xE1 == -0x1F)
-	STS		i2c_reg, I2C_OFF		; ++i2c_reg for multi byte block transfers
-	; TODO: bit 7 is always set, if finishing took to long
-	RJMP	ltdone
-#endif
 
 ltdone:
 	LDI	PARAM,  (1<<TWEA) | (1<<TWEN) | (1<<TWIE) | (1<<TWINT)
@@ -309,18 +308,9 @@ TWI_write:
 	; write data from TWDR to @I2C_OFF, return new TWCR value in PARAM
 	LDS		PARAM, TWDR				; Data
 	CPI		I2C_OFF, 192			; if address<192
-	BRLO	lrspixel
-	CPI		I2C_OFF, 0xff			; if address==0xff
-	BREQ	lrsreg
+	BRLO	lrsregisters			; I2C_OFF < 192
 	CPI		I2C_OFF, I2C_EE_WP		; if address==0xF3
 	BREQ	lree
-
-#ifndef	NDEBUG
-	CPI		I2C_OFF, 0xE0			; registers 0xE0-0xEB
-	BRLO	lrsnack					; <0xE0
-	CPI		I2C_OFF, 0xF0
-	BRLO	lrsregisters			; 0xE0 <= I2C_OFF <= 0xEF
-#endif
 
 lrsnack:
 	; NACK here
@@ -330,58 +320,26 @@ lree:
 	SBI		_SFR_IO_ADDR(PORTB), EE_WP
 	CPSE	PARAM, 0
 	CBI		_SFR_IO_ADDR(PORTB), EE_WP
-	RJMP	lrdone
-lrsreg:		; write address
-	STS		i2c_reg, PARAM			; address = DATA
-	; now address could be check with available addresses and TWEA disabled if unknown address
-	CPI		PARAM, 192				; address<192 pixels buffer
-	BRLO	lrsregOK				; address valid
-	;CPI		PARAM, I2C_WAI		; address==0xF0 Who-Am-I
-	;BREQ	lrsregOK				; address valid
-	;CPI		PARAM, I2C_VER		; address==0xF1 firmware version
-	;BREQ	lrsregOK				; address valid
-	;CPI		PARAM, I2C_KEYS		; address==0xF2 keys status
-	;BREQ	lrsregOK				; address valid
-	CPI		PARAM, I2C_EE_WP		; address==0xF3 EEPROM write protection
-	BREQ	lrsregOK				; address valid
-lrsregNOK:
-	; for real NACK TWEA=0 must be set to disable ACK
-	LDI	PARAM,  (0<<TWEA) | (1<<TWEN) | (1<<TWIE) | (1<<TWINT)
-	RJMP	ldone					; return and continue at ldone
-lrsregOK:
+	;STS		eewp, PARAM				; store new value to registers buffer
+	INC     I2C_OFF					; increment offset
+	STS     i2c_reg, I2C_OFF		; store offset for next transaction
 	RJMP	lrdone
 
-#ifndef	NDEBUG
 lrsregisters:
 	; load Y register with buffer address
 	LDI     YL, lo8(registers)
 	LDI     YH, hi8(registers)
+	ADD     YL, I2C_OFF				; add offset to Y register
 	; increment register address
 	INC		I2C_OFF
 	STS		i2c_reg, I2C_OFF		; ++i2c_reg for multi byte block transfers
-	SUBI	I2C_OFF, 0xE1			; I2C_OFF -= 0xE0 (I2C register address) + 1 (previous increment)
-	ADD     YL, I2C_OFF				; add offset to Y register
 	; clear I2C_OFF and add CARRY to YH
 	CLR     I2C_OFF
 	ADC     YH, I2C_OFF
-	; store PARAM to buffer
-	ST		Y, PARAM
+	ST		Y, PARAM				; store PARAM to buffer
 	; TODO: buffer must be written to register
 	RJMP	lrdone
-#endif
 
-lrspixel:
-	LDI	YL, lo8(pixels)
-	LDI	YH, hi8(pixels)
-	ADD	YL, I2C_OFF
-	INC	I2C_OFF
-	STS	i2c_reg, I2C_OFF
-	CLR	I2C_OFF
-	ADC	YH, I2C_OFF
-	ST	Y, PARAM
-	LDI		LINE, 1
-	STS		redrawleds, LINE	; set flag redrawleds=1
-	RJMP	lrdone
 lrdone:
 	LDI	PARAM,  (1<<TWEA) | (1<<TWEN) | (1<<TWIE) | (1<<TWINT)
 	WDR		; reset watchdog timer
@@ -531,89 +489,107 @@ lloop:
  .endfunc
 
 .func write_data
-; r20-23 DATA
-; r24 TYPE
+;	Function arguments are allocated left to right.
+;	They are assigned from r25 to r8, respectively.
+;	All arguments take up a even number of registers
+;	(r25),r24,r23,r22 uint32_t DATA
+;	(r21),r20 uint8_t TYPE
 write_data:
-	PUSH	r18
-	;PUSH	r20
-	PUSH	r21
-	PUSH	r22
-	PUSH	r23
+	; save registers
+	;PUSH	r25								; unused
 	PUSH	r24
-	LDI	r18, 24	;
-1:						; do {
-	SBRS	r23, 0				; 	if (data&1)
-	RJMP	2f
-	SBI	_SFR_IO_ADDR(PORTC), LED_SDI	; 		set LED_SDI;
-	RJMP	3f
-2:						; 	else
-	CBI	_SFR_IO_ADDR(PORTC), LED_SDI	;		clr LED_SDI;
-3:
-	ASR	r23				; 	data <<= 1;
-	ROR	r22
-	ROR	r21
-	;ROR	r20								; Don't need?
-	CP	r24, r18			; 	if (type == i)
-	BRNE	4f
-	SBI	_SFR_IO_ADDR(PORTC), LED_LE	; 		set LDE_LE;
-4:
+	PUSH	r23
+	PUSH	r22
+	;PUSH	r21								; unused
+	PUSH	r20
+	PUSH	r18
+	LDI		r18, 24							; number of bits to transmit
+write_data1:								; do {
+	SBRS	r22, 0							; 	if (data&1)
+	RJMP	write_data2
+	SBI		_SFR_IO_ADDR(PORTC), LED_SDI	; 		set LED_SDI;
+	RJMP	write_data3
+write_data2:								; 	else
+	CBI		_SFR_IO_ADDR(PORTC), LED_SDI	;		clr LED_SDI;
+write_data3:
+	/*	clear CARRY unneeded, because value is irrelevant
+	CLC										; clear CARRY
+	**	r25 rotation unneeded, because value is unused
+	ROR		r25								; DATA>>=1; CARRY=0    , bit 31-25, CARRY=bit24
+	*/
+	ROR		r24								; DATA>>=1; CARRY=bit24, bit 23-17, CARRY=bit16
+	ROR		r23								; DATA>>=1; CARRY=bit16, bit 15-9 , CARRY=bit8
+	ROR		r22								; DATA>>=1; CARRY=bit8 , bit  7-1 , CARRY=bit0
+	CP		r24, r18						; 	if (type == i)
+	BRNE	write_data4
+	SBI		_SFR_IO_ADDR(PORTC), LED_LE		; 		set LDE_LE;
+write_data4:
 	CLOCK_OUT
-	DEC	r18				; 	i--;
-	BRNE	1b				; } while (i!=0);
-	CBI	_SFR_IO_ADDR(PORTC), LED_LE	; 		clr LDE_LE
-	POP	r24
-	POP	r23
-	POP	r22
-	POP	r21
-	;POP	r20
-	POP	r18
+	DEC		r18								; 	i--;
+	BRNE	write_data1						; } while (i!=0);
+	CBI		_SFR_IO_ADDR(PORTC), LED_LE		; 		clr LDE_LE
+	; restore registers
+	POP		r18
+	POP		r20
+	;POP		r21								; unused
+	POP		r22
+	POP		r23
+	POP		r24
+	;POP		r25								; unused
 	RET
 .endfunc
 
 .func read_data
-; r22-25 RETURN
-; r24 TYPE
+;	8-bit values are returned in r24.
+;	16-bit values are returned in r25:r24.
+;	32-bit values are returned in r25:r24:r23:r22.
+;	64-bit values are returned in r25:r24:r23:r22:r21:r20:r19:r18.
+;	(r25),r24 uint8_t TYPE
+;	(r25),r24,r23,r22 uint32_t RETURN
 read_data:
-	PUSH	r18
-	PUSH	r19
-	;PUSH	r20
-	PUSH	r21
-	PUSH	r22
-	PUSH	r23
+	; save registers
+	/*	no need to save, r25::r22 will be return
+	PUSH	r25
 	PUSH	r24
-	LDI	r18, 24	;
-1:						; do {
-	IN	r19, _SFR_IO_ADDR(PORTC)	; ret |= PINC&1;
-	ANDI	r19, LED_SDI
-
-
-	SBRS	r23, 0				; 	if (data&1)
-	RJMP	2f
-	SBI	_SFR_IO_ADDR(PORTC), LED_SDI	; 		set LED_SDI;
-	RJMP	3f
-2:						; 	else
-	CBI	_SFR_IO_ADDR(PORTC), LED_SDI	;		clr LED_SDI;
-3:
-	ASR	r23				; 	data <<= 1;
-	ROR	r22
-	ROR	r21
-	;ROR	r20								; Don't need?
-
-
-	CP	r24, r18			; 	if (type == i)
-	BRNE	4f
-	SBI	_SFR_IO_ADDR(PORTC), LED_LE	; 		set LDE_LE;
-4:
-	CLOCK_OUT
-	DEC	r18				; 	i--;
-	BRNE	1b				; } while (i!=0);
-	CBI	_SFR_IO_ADDR(PORTC), LED_LE	; 		clr LDE_LE
-	POP	r24
-	POP	r23
-	POP	r22
-	POP	r21
-	;POP	r20
-	POP	r19
-	POP	r18
+	PUSH	r23
+	PUSH	r22
+	*/
+	PUSH	r21								; save register for write_data call
+	PUSH	r20								; save register for write_data call
+	; first the LE sequence must be sent
+	MOVW	r20, r24						; TYPE parameter for write_data
+	CLR		r25
+	CLR		r24
+	CLR		r23
+	CLR		r22								; DATA=0 for write_data
+	RCALL	write_data
+	; now give time to aquire data
+	POP		r20								; restore register
+	POP		r21								; restore register
+	; read data from LED2472G
+	PUSH	r18								; save register
+	LDI		r18, 24							; number of bits to receive
+	CBI		_SFR_IO_ADDR(PORTC), LED_SDI	; clr LED_SDI;
+read_data1:									; do {
+	SBI		_SFR_IO_ADDR(PORTC), LED_CLKR	; raise LED_CLKR
+	CLC		; clear CARRY
+	SBIC	_SFR_IO_ADDR(PORTC), LED_SDO	; skip if LED_SDO cleared
+	SEC		; set CARRY if LED_SDO is set
+	CBI		_SFR_IO_ADDR(PORTC), LED_CLKR	; lower LED_CLKR
+	ROL		r22								; DATA<<=1; CARRY=bit8 , bit  7-1 , CARRY=LED_SDO
+	ROL		r23								; DATA<<=1; CARRY=bit16, bit 15-9 , CARRY=bit8
+	ROL		r24								; DATA<<=1; CARRY=bit24, bit 23-17, CARRY=bit16
+	/*	r25 rotation unneeded, because value is unused
+	ROL		r25								; DATA<<=1; CARRY=bit32, bit 31-25, CARRY=bit24
+	*/
+	DEC		r18								; 	i--;
+	BRNE	read_data1						; } while (i!=0);
+	/*	r25:r24:r23:r22 is return value, save/restore would be a big-bad-bug
+	POP		r22
+	POP		r23
+	POP		r24
+	POP		r25
+	*/
+	POP		r18								; restore registers
 	RET
 .endfunc
