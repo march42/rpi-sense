@@ -44,7 +44,7 @@ I2C_OFF	= 26	; XL
 .equiv I2C_WDC	, 0xf6
 .equiv I2C_ID	, 's'
 #ifndef	NDEBUG
-.equiv VERSION	, 0xA1	// debug version
+.equiv VERSION	, 0xA1	; debug version
 #else
 .equiv VERSION	, 0x01
 #endif
@@ -402,11 +402,11 @@ while_i2c_busy:
 	ANDI	_SFR_IO_ADDR(GPIOR0), (1 << TWINT)
 	BRNE 	while_i2c_busy		; TWINT set if i2c operation finished
 */
-/*
-	LDI		LINE, 0x00						; LINE=0x00
-	OUT		_SFR_IO_ADDR(PORTD), LINE		; switch PORTD active-low
-	COM		LINE							; LINE=0
+/*	unnecessary to configure PORTD here
+	LDI		LINE, 0xFF						; LINE=0xFF
 	OUT		_SFR_IO_ADDR(DDRD), LINE		; switch PORTD to output
+	COM		LINE							; LINE=0
+	OUT		_SFR_IO_ADDR(PORTD), LINE		; switch PORTD active-low
 */
 	WDR		; reset watchdog timer
 	;	check if update is needed

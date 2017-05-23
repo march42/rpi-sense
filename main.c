@@ -238,9 +238,9 @@ int main(void)
 	TCNT0	= 0;							// clear timer0 counter register
 	OCR0A	= 0;							// clear timer0 output compare register
 	OCR0B	= 0;							// clear timer0 output compare register
-	TCCR0A	= (0 << CTC0) | timer0_prescalerbits(5);	// TWI clock select clkT0=clkIO/1024 =8kHz
+	TCCR0A	= (0 << CTC0) | timer0_prescalerbits(5);	// TWI clock select clkT0=clkIO/1024 =8kHz, tT0=128ns
 	TIFR0	= 0;							// clear interrupt flag register
-	TIMSK0	= (0 << OCIE0B) | (0 << OCIE0A) | (1 << TOIE0);	// interrupt enable flags
+	TIMSK0	= (0 << OCIE0B) | (0 << OCIE0A) | (0 << TOIE0);	// interrupt enable flags
 	//PRR		&= ~(1 << PRTIM0);				// disable PRTIM0 flag bit
 
 	// configure TWI serial I2C interface
@@ -277,16 +277,14 @@ int main(void)
 		wdt_reset();		// reset watchdog timer
 		sei();				// Set Enable global Interrupts
 
-#ifdef UNUSED_CODE
 		while(0 != i2c_busy)
 		{
 			//	just wait for I2C operation to finish
 			delay(200);		// (clkT0=8kHz, 200/8000=1/40s =25ms
 		}
-#endif
 
-		//clear_gain();
 #ifdef UNUSED_CODE
+		//clear_gain();
 		if(0 == redrawleds)
 		{
 			check_keys();	// skip LED update and only check joystick
@@ -319,7 +317,7 @@ int main(void)
 		registers[pos++]	= SMCR;
 #endif	// NDEBUG
 
-#ifdef UNUSED_CODE
+#ifdef USE_SLEEP
 		if(0 == i2c_busy && 0 == redrawleds)
 		{
 			// only if I2C operation ended and redraw unnecessary
