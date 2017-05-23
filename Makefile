@@ -4,10 +4,10 @@ OBJ			= main.o rpi-sense.o
 MCU_TARGET		= attiny88
 
 ifeq ($(DEBUG),)
-OPTIMIZE		= -Os -g
-else
 # disable debugging code and optimizations
 OPTIMIZE		= -Os -g0 -DNDEBUG
+else
+OPTIMIZE		= -Os -g
 endif
 
 CC			= avr-gcc

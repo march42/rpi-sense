@@ -240,7 +240,7 @@ int main(void)
 	OCR0B	= 0;							// clear timer0 output compare register
 	TCCR0A	= (0 << CTC0) | timer0_prescalerbits(5);	// TWI clock select clkT0=clkIO/1024 =8kHz
 	TIFR0	= 0;							// clear interrupt flag register
-	TIMSK0	= (0 << OCIE0B) | (0 << OCIE0A) | (0 << TOIE0);	// interrupt enable flags
+	TIMSK0	= (0 << OCIE0B) | (0 << OCIE0A) | (1 << TOIE0);	// interrupt enable flags
 	//PRR		&= ~(1 << PRTIM0);				// disable PRTIM0 flag bit
 
 	// configure TWI serial I2C interface
@@ -250,21 +250,24 @@ int main(void)
 	//PRR		&= ~(1 << PRTWI);				// disable PRTWI flag bit
 	i2c_busy	= 0;						// clear I2C operation in progress flag
 
-	// watchdog has on chip 128kHz oscillator, configure for 1/8=16k/128k second interval
+	/*	watchdog has on chip 128kHz oscillator
+	**	prescaler bits 0=2k, 1=4k, 2=8k, 3=16k, 4=32k, 5=64k, 6=128k, 7=256k, 8=512k, 9=1024k
+	**	timeout 0=16ms, 1=32ms, 2=64ms, 3=125ms, 4=250ms, 5=500ms, 6=1s, 7=2s, 8=4s, 9=8s
+	*/
 	cli();									// global interrupt disable
 	wdt_reset();							// reset watchdog timer
 	MCUSR	&= ~(1 << WDRF);				// clear WDRF flag
 	WDTCSR	= (1 << WDCE) | (1 << WDE);		// enable watchdog change
-	WDTCSR	= (1 << WDIE) | (0 << WDE) | watchdog_prescalerbits(0b0011);	// enable interrupt, disable reset, 16k/128kHz interval
+	WDTCSR	= (1 << WDIE) | (0 << WDE) | watchdog_prescalerbits(3);	// enable interrupt, disable reset
 
 	/*	configure SLEEP mode
 	**	sleep modes - 0b10=power-down, 0b01=ADC noise reduction, 0b00=IDLE
 	*/
 #ifdef USE_SLEEP
-	SMCR	= (1 << SM1) | (0 << SM0) | (1 << SE);	// enable SLEEP to power-down mode
+	SMCR	= (1 << SM1) | (0 << SM0) | (0 << SE);	// enable SLEEP to power-down mode
 #else
-	SMCR	= (1 << SM1) | (0 << SM0) | (0 << SE);	// disable sleep
-#endif
+	SMCR	= (0 << SM1) | (0 << SM0) | (0 << SE);	// enable SLEEP to IDLE mode
+#endif	// USE_SLEEP
 
 	//	disable TIMER1,SPI,ADC clock for power reduction
 	PRR		= (0 << PRTWI) | (0 << PRTIM0) | (1 << PRTIM1) | (1 << PRSPI) | (1 << PRADC);
@@ -278,7 +281,6 @@ int main(void)
 		{
 			//	just wait for I2C operation to finish
 			delay(200);		// (clkT0=8kHz, 200/8000=1/40s =25ms
-			wdt_reset();	// reset watchdog timer
 		}
 
 		//clear_gain();
@@ -309,20 +311,20 @@ int main(void)
 		registers[pos++]	= PORTD;
 		registers[pos++]	= MCUSR;
 		registers[pos++]	= MCUCR;
-		registers[pos++]	= PORTCR;
-		registers[pos++]	= PRR;
-#endif
+		registers[pos++]	= WDTCSR;
+		registers[pos++]	= SMCR;
+#endif	// NDEBUG
 
-#ifdef USE_SLEEP
 		if(0 == i2c_busy && 0 == redrawleds)
 		{
 			// only if I2C operation ended and redraw unnecessary
 			sei();			// enable interrupts before SLEEP
+			SMCR	|= (1 << SE);	// enable SLEEP mode
 			sleep_cpu();	// sleep and wait for interrupt
+			SMCR	&= ~(1 << SE);	// clear SLEEP enable flag
 			_NOP();
 			_NOP();			// just to be sure a little delay after wake up from SLEEP
 		}
-#endif // _DEBUG
 	}
 
 	return(0);	// hopefully we never reach this
