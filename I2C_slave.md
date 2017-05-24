@@ -5,7 +5,7 @@ Basic considerations and procedure.
 
 ### credits and further information
 
-- see nxp I&sup2;C specifications and user manual (UM10204.pdf)[http://www.nxp.com/documents/user_manual/UM10204.pdf]
+- see nxp I&sup2;C specifications and user manual [UM10204.pdf](http://www.nxp.com/documents/user_manual/UM10204.pdf)
 - see _atmel-2565-using-the-twi-module-as-i2c-slave_applicationnote_avr311.pdf_ from Atmel for basic information
 
 ### good to know
