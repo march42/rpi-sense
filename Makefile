@@ -13,6 +13,7 @@ endif
 CC			= avr-gcc
 
 CDEFINES	+= -DUSE_SLEEP
+CDEFINES	+= -DUSE_LEDREAD
 
 # Override is only needed by avr-lib build system.
 override ASFLAGS	= -Wall $(OPTIMIZE) $(CDEFINES) -mmcu=$(MCU_TARGET)
