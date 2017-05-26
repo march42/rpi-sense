@@ -4,16 +4,30 @@ OBJ			= main.o rpi-sense.o
 MCU_TARGET		= attiny88
 
 ifeq ($(DEBUG),)
+# DEBUG unset or empty
 # disable debugging code and optimizations
 OPTIMIZE		= -Os -g0 -DNDEBUG
+
 else
+# DEBUG set and not empty
 OPTIMIZE		= -Os -g
+# enable code for debugging register read/write
+CDEFINES	+= -DUSE_REGWRITE
+# enable code for LED2472G read/write
+CDEFINES	+= -DUSE_LEDWRITE
+endif
+
+ifneq ($(DISABLE_EXTRAS),)
+CDEFINES	= -DDISABLE_EXTRAS
+
+else
+# enable code optimization with SLEEP instruction
+CDEFINES	+= -DUSE_SLEEP
+# enable code for LED2472G read
+CDEFINES	+= -DUSE_LEDREAD
 endif
 
 CC			= avr-gcc
-
-CDEFINES	+= -DUSE_SLEEP
-CDEFINES	+= -DUSE_LEDREAD
 
 # Override is only needed by avr-lib build system.
 override ASFLAGS	= -Wall $(OPTIMIZE) $(CDEFINES) -mmcu=$(MCU_TARGET)
