@@ -62,9 +62,10 @@ Basic considerations and procedure.
 | **variable** | **explanation, notes** |
 |:---:|:--- |
 | DEBUG=1 | enable DEBUG<br/>set compiler USE_REGWRITE, USE_LEDWRITE |
-| DEBUG= | disable DEBUG<br/>set compiler NDEBUG, USE_LEDREAD |
+| _DEBUG=_ | disable DEBUG<br/>set compiler NDEBUG, USE_LEDREAD |
 | USESLEEP=1 | set compiler USE_SLEEP |
 | DISABLE_EXTRAS=1 | disable all extra code and unset compiler DEFINEs |
+| _DISABLE_EXTRAS=_ | enable USE_SLEEP and USE_LEDREAD |
 
 ```sh
 make all [DEBUG=1] [USESLEEP=1] [DISABLE_EXTRAS=1]
@@ -74,13 +75,13 @@ make all [DEBUG=1] [USESLEEP=1] [DISABLE_EXTRAS=1]
 
 | **DEFINE** | **value** | **explanation, notes** |
 |:--- |:---:|:--- |
-| I2C_PAGES | 1 __default__ | single page data |
-| | 1,2,4,8 | number of register pages<br/>writing 0xAn to REG_WAI changes to page n |
-| NDEBUG | __set__ | disable debugging code and optimizations |
-|   | __unset__ | enable debugging code and optimizations<br/>enable reading of CPU registers |
-| USE_REGWRITE |   | enable reading and writing of CPU registers |
-| USE_LEDREAD | __set__ | enable code to read LED2472G config and status |
-| USE_LEDWRITE | __set__ | enable code to read/write LED2472G config and status |
+| I2C_PAGES | 1 _default_ | single page data |
+| I2C_PAGES | 1,2,4,8 | number of register pages<br/>writing 0xAn to REG_WAI changes to page n |
+| _NDEBUG_ | _set_ | disable debugging code and optimizations |
+| NDEBUG | _unset_ | enable debugging code and optimizations<br/>enable reading of CPU registers |
+| USE_REGWRITE | _set_ | enable reading and writing of CPU registers |
+| USE_LEDREAD | _set_ | enable code to read LED2472G config and status |
+| USE_LEDWRITE | _set_ | enable code to read/write LED2472G config and status |
 
 ```sh
 CDEFINES="[-DI2C_PAGES=2] [-DUSE_LEDWRITE]" make all
