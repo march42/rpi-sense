@@ -59,6 +59,7 @@ Basic considerations and procedure.
 
 #### compile time variables for gnu make
 
+| **variable** | **explanation, notes** |
 |:---:|:--- |
 | DEBUG=1 | enable DEBUG<br/>set compiler USE_REGWRITE, USE_LEDWRITE |
 | DEBUG= | disable DEBUG<br/>set compiler NDEBUG, USE_LEDREAD |
@@ -76,8 +77,8 @@ make all [DEBUG=1] [USESLEEP=1] [DISABLE_EXTRAS=1]
 | I2C_PAGES | 1 __default__ | single page data |
 | | 1,2,4,8 | number of register pages<br/>writing 0xAn to REG_WAI changes to page n |
 | NDEBUG | __set__ | disable debugging code and optimizations |
-| | __unset__ | enable debugging code and optimizations<br/>enable reading of CPU registers |
-| USE_REGWRITE | | enable reading and writing of CPU registers |
+|   | __unset__ | enable debugging code and optimizations<br/>enable reading of CPU registers |
+| USE_REGWRITE |   | enable reading and writing of CPU registers |
 | USE_LEDREAD | __set__ | enable code to read LED2472G config and status |
 | USE_LEDWRITE | __set__ | enable code to read/write LED2472G config and status |
 
