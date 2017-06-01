@@ -66,6 +66,7 @@ Basic considerations and procedure.
 | USESLEEP=1 | set compiler USE_SLEEP |
 | DISABLE_EXTRAS=1 | disable all extra code and unset compiler DEFINEs |
 | _DISABLE_EXTRAS=_ | enable USE_SLEEP and USE_LEDREAD |
+| I2C_PAGES=n | set compiler I2C_PAGES=n to enable n register pages |
 
 ```sh
 make all [DEBUG=1] [USESLEEP=1] [DISABLE_EXTRAS=1]
@@ -75,13 +76,15 @@ make all [DEBUG=1] [USESLEEP=1] [DISABLE_EXTRAS=1]
 
 | **DEFINE** | **value** | **explanation, notes** |
 |:--- |:---:|:--- |
-| I2C_PAGES | 1 _default_ | single page data |
-| I2C_PAGES | 1,2,4,8 | number of register pages<br/>writing 0xAn to REG_WAI changes to page n |
+| I2C_PAGES | 1 _default_ | single page data<br/>**for ATtiny88 with 512Byte SRAM 2 pages is the absolute maximum** |
+| I2C_PAGES | 1,2,4,8 | number of register pages<br/>writing 0xAn to REG_WAI changes to page n, WAI='s'+n for all pages [s, t, u,v, w,x,y,z] |
 | _NDEBUG_ | _set_ | disable debugging code and optimizations |
 | NDEBUG | _unset_ | enable debugging code and optimizations<br/>enable reading of CPU registers |
 | USE_REGWRITE | _set_ | enable reading and writing of CPU registers |
 | USE_LEDREAD | _set_ | enable code to read LED2472G config and status |
 | USE_LEDWRITE | _set_ | enable code to read/write LED2472G config and status |
+| I2C_VALIDATE_ADDRESS | _set_ | enable address checking on I2C read/write |
+| TWI_VECTOR_S | _set_ | enable C code TWI_vect in rpi-sense-twi.c |
 
 ```sh
 CDEFINES="[-DI2C_PAGES=2] [-DUSE_LEDWRITE]" make all

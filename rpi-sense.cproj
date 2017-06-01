@@ -119,7 +119,7 @@
     </ToolchainSettings>
     <UsesExternalMakeFile>True</UsesExternalMakeFile>
     <OutputDirectory>$(MSBuildProjectDirectory)\</OutputDirectory>
-    <BuildTarget>all DEBUG=1</BuildTarget>
+    <BuildTarget>all DEBUG=1 I2C_PAGES=2</BuildTarget>
     <CleanTarget>clean</CleanTarget>
     <ExternalMakeFilePath>$(MSBuildProjectDirectory)\Makefile</ExternalMakeFilePath>
   </PropertyGroup>
@@ -127,7 +127,16 @@
     <Compile Include="main.c">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="rpi-sense-twi.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="rpi-sense.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="rpi-sense.S">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="variables.c">
       <SubType>compile</SubType>
     </Compile>
   </ItemGroup>

@@ -1,5 +1,5 @@
 PRG			= rpi-sense
-OBJ			= main.o rpi-sense.o
+OBJ			= main.o variables.o rpi-sense.o
 
 MCU_TARGET		= attiny88
 
@@ -17,14 +17,27 @@ CDEFINES	+= -DUSE_REGWRITE
 CDEFINES	+= -DUSE_LEDWRITE
 endif
 
+ifneq ($(USESLEEP),)
+# enable code optimization with SLEEP instruction
+CDEFINES	+= -DUSE_SLEEP
+endif
+
+ifneq ($(I2C_PAGES),)
+CDEFINES	+= -DI2C_PAGES=$(I2C_PAGES)
+endif
+
 ifneq ($(DISABLE_EXTRAS),)
 CDEFINES	= -DDISABLE_EXTRAS
 
 else
-# enable code optimization with SLEEP instruction
-CDEFINES	+= -DUSE_SLEEP
 # enable code for LED2472G read
 CDEFINES	+= -DUSE_LEDREAD
+# enable code to validate register address
+CDEFINES	+= -DI2C_VALIDATE_ADDRESS
+endif
+
+ifneq (,$(findstring TWI_VECTOR_S,$(CDEFINES)))
+OBJ			+= rpi-sense-twi.o
 endif
 
 CC			= avr-gcc
@@ -43,8 +56,8 @@ $(PRG).elf: $(OBJ)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 # Dependencies
-main.o: main.c
-rpi-sense.o: rpi-sense.S
+%.o: %.c rpi-sense.h
+%.o: %.S rpi-sense.h
 
 .PHONY: clean
 clean:
