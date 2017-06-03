@@ -2,6 +2,12 @@
 
 WIP LED HAT firmware and driver
 
+## additional information and documentation
+
+*Most information is available in the [Wiki](https://github.com/march42/rpi-sense/wiki)*
+
+- general infos and register description for [ATtiny88 firmware](https://github.com/march42/rpi-sense/wiki/Sense-Hat---ATtiny88)
+
 ## Prerequisites
 
 `sudo apt-get install gcc-avr avr-libc avrdude`

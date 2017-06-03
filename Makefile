@@ -1,19 +1,46 @@
 PRG			= rpi-sense
-OBJ			= main.o rpi-sense.o
+OBJ			= main.o variables.o rpi-sense.o
 
 MCU_TARGET		= attiny88
 
 ifeq ($(DEBUG),)
+# DEBUG unset or empty
 # disable debugging code and optimizations
 OPTIMIZE		= -Os -g0 -DNDEBUG
+# enable code for LED2472G read
+CDEFINES	+= -DUSE_LEDREAD
+
 else
+# DEBUG set and not empty
 OPTIMIZE		= -Os -g
+# enable code for debugging register read/write
+CDEFINES	+= -DUSE_REGWRITE
+# enable code for LED2472G read/write
+CDEFINES	+= -DUSE_LEDWRITE
+endif
+
+ifneq ($(USESLEEP),)
+# enable code optimization with SLEEP instruction
+CDEFINES	+= -DUSE_SLEEP
+endif
+
+ifneq ($(I2C_PAGES),)
+CDEFINES	+= -DI2C_PAGES=$(I2C_PAGES)
+# enable code to validate register address
+CDEFINES	+= -DI2C_VALIDATE_ADDRESS
+endif
+
+ifneq ($(DISABLE_EXTRAS),)
+CDEFINES	= -DDISABLE_EXTRAS
+
+else
+endif
+
+ifneq (,$(findstring TWI_VECTOR_S,$(CDEFINES)))
+OBJ			+= rpi-sense-twi.o
 endif
 
 CC			= avr-gcc
-
-CDEFINES	+= -DUSE_SLEEP
-CDEFINES	+= -DUSE_LEDREAD
 
 # Override is only needed by avr-lib build system.
 override ASFLAGS	= -Wall $(OPTIMIZE) $(CDEFINES) -mmcu=$(MCU_TARGET)
@@ -29,8 +56,8 @@ $(PRG).elf: $(OBJ)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 # Dependencies
-main.o: main.c
-rpi-sense.o: rpi-sense.S
+%.o: %.c rpi-sense.h
+%.o: %.S rpi-sense.h
 
 .PHONY: clean
 clean:
