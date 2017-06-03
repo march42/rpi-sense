@@ -82,11 +82,12 @@ TWI_vect:
 	BREQ	TWI_vect_SRADDR
 	CPI		PARAMH, TW_ST_DATA_NACK				; slave transmitter data sent NACK received
 	BREQ	TWI_vect_STOP
+	CPI		PARAMH, TW_BUS_ERROR				; I2C bus error
+	BREQ	TWI_vect_RESET
+	// I2C spec: "If two or more masters try to put information onto the bus, the first to produce a ‘one’ when the other produces a ‘zero’ will lose the arbitration"
 	CPI		PARAMH, TW_SR_ARB_LOST_SLA_ACK		; slave receiver arbitration lost in SLA+W
 	BREQ	TWI_vect_RESET
 	CPI		PARAMH, TW_ST_ARB_LOST_SLA_ACK		; slave transmitter arbitration lost in SLA+R
-	BREQ	TWI_vect_RESET
-	CPI		PARAMH, TW_BUS_ERROR				; I2C bus error
 	BREQ	TWI_vect_RESET
 
 #	if defined(OPTIMIZE_USENACKFLAG)
@@ -232,9 +233,8 @@ TWI_vect_SRDATA:								; Slave Receiver DATA received
 		CPI		PARAML, REG_VER					; firmware version
 		BREQ	TWI_vect_NACK					; invalid register address
 #		if defined(USE_REGWRITE)
-			CPI		PARAML, REG_WDTCSR			; WDTCSR CPU register
-			BREQ	TWI_vect_SRREG				; register DATA received
-			CPI		PARAML, REG_SMCR			; WDTCSR CPU register
+			ANDI	PARAML, 0xFC				; mask out lower 2 bit
+			CPI		PARAML, REG_WDTCSR			; WDTCSR..TOV0C CPU register
 			BREQ	TWI_vect_SRREG				; register DATA received
 #		endif // defined(USE_REGWRITE)
 #		if defined(USE_LEDWRITE)
@@ -247,7 +247,7 @@ TWI_vect_SRDATA:								; Slave Receiver DATA received
 			CPI		PARAML, REG_PINA			; port registers
 			BREQ	TWI_vect_SRREG				; register DATA received
 #		endif // defined(USE_REGWRITE)
-#		RJMP	TWI_vect_NACK					; invalid register address
+		RJMP	TWI_vect_NACK					; invalid register address
 #	endif // defined(I2C_VALIDATE_ADDRESS)
 TWI_vect_SRREG:
 	;		prepare TWI flags and store to TWCR
@@ -456,8 +456,9 @@ check_keys:
 	RET		; return control back to main()
 .endfunc
 
-;	(r25),r24 uint8_t r24/PARAM = delay for clkT0 ticks
 .func delay
+;	(r25),r24 uint8_t r24/PARAM = delay for clkT0 ticks
+;	F_CPU==8MHz, T0 prescaler==5, clkT0=128ys
 delay:
 	PUSH	r19
 	PUSH	r20
@@ -479,44 +480,46 @@ lloop:
 ;	(r25),r24,r23,r22 uint32_t DATA
 ;	(r21),r20 uint8_t TYPE
 write_data:
-	; save registers
-	;PUSH	r25								; unused
-	PUSH	r24
-	PUSH	r23
-	PUSH	r22
-	;PUSH	r21								; unused
-	PUSH	r20
-	PUSH	r18
-	LDI		r18, 24							; number of bits to transmit
+	; save registers - Registers r18-r27 and r30-r31 can be used in a function without saving
+	;PUSH	r25								; unused DATA 24-31
+	;PUSH	r24								; DATA 16-23
+	;PUSH	r23								; DATA 8-15
+	;PUSH	r22								; DATA 0-7
+	;PUSH	r21								; unused - copy of TYPE for loop bit counting
+	;PUSH	r20								; TYPE
+	;PUSH	r0								; __temp_reg__
+	LDI		r21, 24							; number of bits to transmit
 write_data1:								; do {
-	SBRS	r22, 0							; 	if (data&1)
+	SBRS	r24, 7							; 	if (data&1)
 	RJMP	write_data2
 	SBI		_SFR_IO_ADDR(PORTC), LED_SDI	; 		set LED_SDI;
 	RJMP	write_data3
 write_data2:								; 	else
 	CBI		_SFR_IO_ADDR(PORTC), LED_SDI	;		clr LED_SDI;
 write_data3:
-	/*	r25 rotation unneeded, because value is unused
-	LSR		r25								; DATA>>=1;           0, bit 31-25, CARRY=bit24
-	*/
-	ROR		r24								; DATA>>=1; CARRY=bit24, bit 23-17, CARRY=bit16
-	ROR		r23								; DATA>>=1; CARRY=bit16, bit 15-9 , CARRY=bit8
-	ROR		r22								; DATA>>=1; CARRY=bit8 , bit  7-1 , CARRY=bit0
-	CP		r24, r18						; 	if (type == i)
-	BRNE	write_data4
+	//	r25 rotation unneeded, because value is unused
+	CLC										; clear CARRY bit
+	SBRC	r24, 7							; skip if bit23 cleared
+	SEC										; set CARRY bit if LED_SDO is active high
+	ROL		r22								; DATA<<=1; CARRY=bit7 , bit  6-0 , CARRY=bit23
+	ROL		r23								; DATA<<=1; CARRY=bit15, bit 14-8 , CARRY=bit7
+	ROL		r24								; DATA<<=1; CARRY=bit23, bit 22-16, CARRY=bit15
+	CP		r20, r21						; 	if (type == i)
+	BRLO	write_data4
 	SBI		_SFR_IO_ADDR(PORTC), LED_LE		; 		set LDE_LE;
 write_data4:
-	CLOCK_OUT
-	DEC		r18								; 	i--;
+	CLOCK_OUT								; clock pulse out to LED2472G
+	DEC		r21								; 	i--;
 	BRNE	write_data1						; } while (i!=0);
 	CBI		_SFR_IO_ADDR(PORTC), LED_LE		; 		clr LDE_LE
+	CBI		_SFR_IO_ADDR(PORTC), LED_SDI	;		clr LED_SDI;
 	; restore registers
-	POP		r18
-	POP		r20
+	;POP		r0								; restore __temp_reg__
+	;POP		r20
 	;POP		r21								; unused
-	POP		r22
-	POP		r23
-	POP		r24
+	;POP		r22
+	;POP		r23
+	;POP		r24
 	;POP		r25								; unused
 	RET
 .endfunc
@@ -529,7 +532,7 @@ write_data4:
 ;	(r25),r24 uint8_t TYPE
 ;	(r25),r24,r23,r22 uint32_t RETURN
 read_data:
-	; save registers
+	; save registers - Registers r18-r27 and r30-r31 can be used in a function without saving
 	/*	no need to save, r25::r22 will be return
 	PUSH	r25
 	PUSH	r24
@@ -537,67 +540,75 @@ read_data:
 	PUSH	r22
 	*/
 	PUSH	r21								; save register for write_data call
-	PUSH	r20								; save register for write_data call
-	; first the LE sequence must be sent
-	MOVW	r20, r24						; TYPE parameter for write_data
-	CLR		r25
-	CLR		r24
-	CLR		r23
-	CLR		r22								; DATA=0 for write_data
-	RCALL	write_data
-	; now give time to aquire data
-	MOV		r20, r24						; copy register
+	PUSH	r20								; save register for write_data call, later used as bit loop counter
+	MOVW	r20, r24						; TYPE parameter for write_data, later used as bit loop counter
+	LDI		r22, 0xFF						; 0xFF to activate all outputs
+	LDI		r23, 0xFF						; 0xFF to activate all outputs
+	LDI		r24, 0xFF						; 0xFF to activate all outputs
+	;		skip output activation if not error detection
 	CPI		r24, 11							; 11==DET_OPEN, 12=DET_SHORT, 13=DET_OPEN_SHORT
-	BRLO	read_data2						; <11 no additional time needed
+	BRLO	read_data4						; <11 no additional time needed
 	CPI		r24, 14							; 14==THERM_READ
+	BRSH	read_data4						; >=14 no additional time needed
+	;		for error detection all outputs must be set
+	PUSH	r20								; save TYPE parameter for later use
+	LDI		r20, DAT_LATCH					; switch all outputs on before error detection
+	RCALL	write_data						; write_data doesn't change r20 register
+	LDI		r20, GAIN_WRITE					; highest gain for error detection
+	RCALL	write_data						; write_data doesn't change r20 register
+	POP		r20								; restore TYPE parameter
+read_data4:
+	; first the LE sequence must be sent
+	RCALL	write_data						; write_data doesn't change r20 register
+	CPI		r20, 11							; 11==DET_OPEN, 12=DET_SHORT, 13=DET_OPEN_SHORT
+	BRLO	read_data2						; <11 no additional time needed
+	CPI		r20, 14							; 14==THERM_READ
 	BRSH	read_data2						; >=14 no additional time needed
-	; error detection needs at least 1ys
-	PUSH	PARAM							; save PARAM/r24 register
-	LDI		PARAM, 0xFF						; PARAM=0xFF
-	OUT		_SFR_IO_ADDR(DDRD), PARAM		; switch PORTD to output
-	COM		PARAM							; PARAM=0x00
-	OUT		_SFR_IO_ADDR(PORTD), PARAM		; switch PORTD active-low
+	LDI		r25, 0xFF						; 0xFF to switch PORTD to output and active-high
+	; now give time to aquire data - if 11 <= r20 < 14
+	; error detection r20==11,12,13 needs at least 1ys and all LED columns are enabled
+	OUT		_SFR_IO_ADDR(DDRD), r25			; switch PORTD to output
+	OUT		_SFR_IO_ADDR(PORTD), r25		; switch PORTD active-high
 	CBI		_SFR_IO_ADDR(PORTC), LED_OE_N	; When the ROE, GOE and BOE signals become low, error detection starts.
-	; LED_OE_N low needs delay of 1ys = 8 CPU cycles
-	NOP										; 2x NOP + 3x POP +++ should be enough
-	NOP
-	POP		PARAM							; restore PARAM/r24 register
+	; LED_OE_N low needs delay of 1ys = 8 CPU cycles a 125ns
+	LSR		_SFR_IO_ADDR(PORTD)				; COL_EN1 to active low
+	ROR		_SFR_IO_ADDR(PORTD)				; COL_EN2
+	ROR		_SFR_IO_ADDR(PORTD)				; COL_EN3
+	ROR		_SFR_IO_ADDR(PORTD)				; COL_EN4
+	ROR		_SFR_IO_ADDR(PORTD)				; COL_EN5
+	ROR		_SFR_IO_ADDR(PORTD)				; COL_EN6
+	ROR		_SFR_IO_ADDR(PORTD)				; COL_EN7
+	ROR		_SFR_IO_ADDR(PORTD)				; COL_EN8
+	SBI		_SFR_IO_ADDR(PORTC), LED_CLKR	; raise LED_CLKR to make result available
+	OUT		_SFR_IO_ADDR(PORTD), r25		; switch PORTD active-high
+	SBI		_SFR_IO_ADDR(PORTC), LED_OE_N	; LED_OE_N kept low for at least 1 ys
 	; after first CLK pulse data will be made available
 read_data2:
-	POP		r20								; restore register
-	POP		r21								; restore register
 	; read data from LED2472G
-	PUSH	r18								; save register
-	LDI		r18, 24							; number of bits to receive
+	LDI		r20, 24							; number of bits to receive
 	CBI		_SFR_IO_ADDR(PORTC), LED_SDI	; clr LED_SDI;
 read_data3:									; do {
 	SBI		_SFR_IO_ADDR(PORTC), LED_CLKR	; raise LED_CLKR
-	SBIC	_SFR_IO_ADDR(PORTC), LED_OE_N	; skip if LED_OE_N cleared - first clock
-	RJMP	read_data4						; skip delay
-	CBI		_SFR_IO_ADDR(PORTC), LED_CLKR	; lower LED_CLKR before delay
-	NOP
-	SBI		_SFR_IO_ADDR(PORTC), LED_OE_N	; kept low for at least 1 ?s
-read_data4:
-	CLC		; clear CARRY
-	SBIC	_SFR_IO_ADDR(PORTC), LED_SDO	; skip if LED_SDO cleared
-	SEC		; set CARRY if LED_SDO is set
-	CBI		_SFR_IO_ADDR(PORTC), LED_CLKR	; lower LED_CLKR
+	CLC										; clear CARRY bit
+	SBIC	_SFR_IO_ADDR(PINC), LED_SDO		; skip if LED_SDO cleared
+	SEC										; set CARRY bit if LED_SDO is active high
 	ROL		r22								; DATA<<=1; CARRY=bit8 , bit  7-1 , CARRY=LED_SDO
 	ROL		r23								; DATA<<=1; CARRY=bit16, bit 15-9 , CARRY=bit8
 	ROL		r24								; DATA<<=1; CARRY=bit24, bit 23-17, CARRY=bit16
-	/*	r25 rotation unneeded, because value is unused
-	**	but without rotation value need to be cleared
-	ROL		r25								; DATA<<=1; CARRY=bit32, bit 31-25, CARRY=bit24
-	*/
-	DEC		r18								; 	i--;
+	CBI		_SFR_IO_ADDR(PORTC), LED_CLKR	; lower LED_CLKR
+	SBIC	_SFR_IO_ADDR(PINC), LED_SDO		; skip if LED_SDO cleared
+	ORI		r22, _BV(0)						; set bit0 if LED_SDO is set
+	//	r25 rotation unneeded, because value is unused
+	DEC		r20								; 	i--;
 	BRNE	read_data3						; } while (i!=0);
-	CLR		r25								; unused DATA.31-24=0
+	CLR		r25								; clear return bit24-31
+	POP		r20								; restore registers
+	POP		r21								; restore register
 	/*	r25:r24:r23:r22 is return value, save/restore would be a big-bad-bug
 	POP		r22
 	POP		r23
 	POP		r24
 	POP		r25
 	*/
-	POP		r18								; restore registers
 	RET
 .endfunc

@@ -7,6 +7,10 @@ ifeq ($(DEBUG),)
 # DEBUG unset or empty
 # disable debugging code and optimizations
 OPTIMIZE		= -Os -g0 -DNDEBUG
+# enable code to validate register address
+CDEFINES	+= -DI2C_VALIDATE_ADDRESS
+# enable code for LED2472G read
+CDEFINES	+= -DUSE_LEDREAD
 
 else
 # DEBUG set and not empty
@@ -30,10 +34,6 @@ ifneq ($(DISABLE_EXTRAS),)
 CDEFINES	= -DDISABLE_EXTRAS
 
 else
-# enable code for LED2472G read
-CDEFINES	+= -DUSE_LEDREAD
-# enable code to validate register address
-CDEFINES	+= -DI2C_VALIDATE_ADDRESS
 endif
 
 ifneq (,$(findstring TWI_VECTOR_S,$(CDEFINES)))

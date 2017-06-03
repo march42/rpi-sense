@@ -191,19 +191,34 @@ void read_registers(void)
 }
 
 #if defined(USE_LEDWRITE)
-void write_led(void)
+void write_led(uint8_t _looping)
 {
-	if(0 != reg_ui8(0, REG_LED_CONF +3))
+	switch(_looping &0x3)
 	{
-		//	unused byte3 (bit31-24) used as write indicator flag
-		write_data(LED_CFG,CONF_WRITE);
-		reg_ui8(0, REG_LED_CONF +3)	= 0;
-	}
-	if(0 != reg_ui8(0, REG_LED_GAIN +3))
-	{
-		//	unused byte3 (bit31-24) used as write indicator flag
-		write_data(LED_GAIN,GAIN_WRITE);
-		reg_ui8(0, REG_LED_GAIN +3)	= 0;
+	case 0:
+		if(1 == reg_ui8(0, REG_LED_GAIN +3))		// check write indicator flag
+		{
+			//	unused byte3 (bit31-24) used as write indicator flag
+			write_data(LED_GAIN,GAIN_WRITE);
+			//reg_ui8(0, REG_LED_GAIN +3)		= 0;	// clear write indicator flag
+		}
+		LED_GAIN	= read_data(GAIN_READ);
+		break;
+	case 1:
+		LED_ERROR	= read_data(DET_OPEN_SHORT);
+		if(1 == reg_ui8(0, REG_LED_CONF +3))		// check write indicator flag
+		{
+			//	unused byte3 (bit31-24) used as write indicator flag
+			write_data(LED_CFG,CONF_WRITE);
+			//reg_ui8(0, REG_LED_CONF +3)		= 0;	// clear write indicator flag
+		}
+		LED_CFG		= read_data(CONF_READ);
+		break;
+	case 2:
+		break;
+	case 3:
+		LED_THERMAL	= read_data(THERM_READ);
+		break;
 	}
 }
 #endif // defined(USE_LEDWRITE)
@@ -211,30 +226,14 @@ void write_led(void)
 #if	defined(USE_LEDREAD) || defined(USE_LEDWRITE)
 void read_led(uint8_t _looping)
 {
-	//	only every 32 loop runs
-	if(11 == (_looping) /*&& 0 == reg_ui8(0, REG_LED_CONF +3)*/)
-	{
+	if(0xFF == _looping || 0 == (_looping &0x3))
 		LED_CFG		= read_data(CONF_READ);
-	}
-	else if(15 == (_looping) /*&& 0 == reg_ui8(0, REG_LED_GAIN +3)*/)
-	{
+	if(0xFF == _looping || 1 == (_looping &0x3))
 		LED_GAIN	= read_data(GAIN_READ);
-	}
-	else if(19 == (_looping))
-	{
+	if(0xFF == _looping || 2 == (_looping &0x3))
 		LED_ERROR	= read_data(DET_OPEN_SHORT);
-	}
-	else if(23 == (_looping))
-	{
+	if(0xFF == _looping || 3 == (_looping &0x3))
 		LED_THERMAL	= read_data(THERM_READ);
-	}
-
-#	ifndef NDEBUG
-		else
-		{
-			reg_ui8(0,0xCF)		= _looping;		// copy looping counter for debugging
-		}
-#	endif // NDEBUG
 }
 #endif // USE_LEDREAD || USE_LEDWRITE
 
@@ -261,43 +260,60 @@ int main(void)
 {
 	uint8_t _looping		= 0;				// local counter variable for main working loop
 
-	cli();										// global interrupt disable
-
 	/*	variable initialization and preparation
 	*/
-	i2cpage					= 0;				// set i2cpage to first page
-	i2caddr					= 0xFF;				// set i2caddr to -1, gets incremented to 0 on first read
+	i2cpage		= 0;							// set i2cpage to first page
+	i2caddr		= 0xFF;							// set i2caddr to -1, gets incremented to 0 on first read
 	CLR_i2cflags;								// clear all flags
 
+	/*	configure TWI serial I2C interface
+	**	configure for interrupt driven SLAVE
+	**	at 100kHz bus clock one data byte received every 90ys (720 CPU cycles)
+	**	at 400kHz bus clock one data byte received every 22.5ys (180 CPU cycles)
+	*/
+	TWBR		= 0xff;							// TWI bit rate
+	TWAR		= FW_I2CSLA << 1;				// TWI slave address
+	TWCR		= _BV(TWEA) | _BV(TWEN) | _BV(TWINT) | _BV(TWIE);
+	//PRR			&= ~_BV(PRTWI);					// disable PRTWI flag bit
+
+	/*	startup speeding to prevent problem on loading kernel modules
+	**	first of all start TWI system
+	*/
+	sei();										// Set Enable global Interrupts
+
 	// define pull-up values
-	//MCUCR	|= (1 << PUD);							// disable pull-up resistors
-	PORTA	= 0;
-	PORTB	= _BV(EE_WP);						// enable write protect pull-up resistor
-	PORTC	= 0;
-	PORTD	= 0;
+	//MCUCR		|= (1 << PUD);						// disable pull-up resistors
+	PORTA		= 0;
+	PORTB		= _BV(EE_WP);					// enable write protect pull-up resistor
+	PORTC		= 0;
+	PORTD		= 0;
 	// define output pins
-	DDRA	= 0;
-	DDRB	= _BV(EE_WP) | _BV(FRAME_INT) | _BV(KEYS_INT);
-	DDRC	= _BV(LED_SDI) | _BV(LED_CLKR) | _BV(LED_LE) | _BV(LED_OE_N);
-	DDRD	= 0xFF;
+	DDRA		= 0;
+	DDRB		= _BV(EE_WP) | _BV(FRAME_INT) | _BV(KEYS_INT);
+	DDRC		= _BV(LED_SDI) | _BV(LED_CLKR) | _BV(LED_LE) | _BV(LED_OE_N);
+	DDRD		= 0xFF;
 
 	/*	configure clocks
 	**	CLKPR pre-scaler is set to 0b0011 if CKDIV8 fuse is programmed, to 0b0000 otherwise
 	**	CLKPS 0000==1, 0001==2, 0010==4, 0011==8, 0100==16, 0101==32, 0110==64, 0111==128, 1000==256
 	**	clock cycle is 125ns at 8MHz
 	*/
-	CLKPR	= _BV(CLKPCE);						// enable CLKPS change
-	CLKPR	= clock_prescalerbits(0);			// no clock pre-scaler divisor (8MHz)
+	CLKPR		= _BV(CLKPCE);					// enable CLKPS change
+	CLKPR		= clock_prescalerbits(0);		// no clock pre-scaler divisor (8MHz)
 
 	/*	watchdog has on chip 128kHz oscillator
 	**	prescaler bits 0=2k, 1=4k, 2=8k, 3=16k, 4=32k, 5=64k, 6=128k, 7=256k, 8=512k, 9=1024k
 	**	timeout 0=16ms, 1=32ms, 2=64ms, 3=125ms, 4=250ms, 5=500ms, 6=1s, 7=2s, 8=4s, 9=8s
 	*/
-	watchdog				= 0;				// clear watchdog counter
+	watchdog	= 0;							// clear watchdog counter
 	wdt_reset();								// reset watchdog timer
-	MCUSR	&= ~_BV(WDRF);						// clear WDRF flag
-	WDTCSR	= _BV(WDCE) | _BV(WDE);				// enable watchdog change
-	WDTCSR	= _BV(WDIE) | _BV(WDE) | watchdog_prescalerbits(6);	// enable interrupt, disable reset
+	MCUSR		&= ~_BV(WDRF);					// clear WDRF flag
+	wdt_reg		= _BV(WDE) | watchdog_prescalerbits(6);	// enable watchdog reset
+#if !defined(NDEBUG)
+	wdt_reg		|= _BV(WDIE);					// enable interrupt and reset if NOT in release
+#endif // defined(NDEBUG)
+	WDTCSR		= _BV(WDCE) | _BV(WDE);			// enable watchdog change
+	WDTCSR		= wdt_reg;						// copy watchdog configuration to WDTCSR
 
 	/*	configure TIMER0
 	**	TIMER0 wont run in power down mode, but in idle
@@ -307,46 +323,39 @@ int main(void)
 	**	TOV0 interrupt with prescaler==4 (clkT0=31.25kHz, 32ys) overflow at 122Hz every 8192ys
 	**	TOV0 interrupt with prescaler==3 (clkT0=125kHz, 8ys) overflow at 488Hz every 2048ys
 	*/
-	counttmr				= 0;				// clear TIMER0 overflow interrupt counter
-	TCNT0	= 0;								// clear timer0 counter register
-	OCR0A	= 0;								// clear timer0 output compare register
-	OCR0B	= 0;								// clear timer0 output compare register
-	TCCR0A	= timer0_prescalerbits(5);			// TWI clock select clkT0=clkIO/1024 =8kHz, tT0=128ns
-	TIFR0	= 0;								// clear interrupt flag register
-	TIMSK0	= _BV(TOIE0);						// interrupt enable flags
+	counttmr	= 0;							// clear TIMER0 overflow interrupt counter
+	TCNT0		= 0;							// clear timer0 counter register
+	OCR0A		= 0;							// clear timer0 output compare register
+	OCR0B		= 0;							// clear timer0 output compare register
+	TCCR0A		= timer0_prescalerbits(5);		// TWI clock select clkT0=clkIO/1024 =7812.5kHz, tT0=128ys
+	TIFR0		= 0;							// clear interrupt flag register
+#if !defined(NDEBUG)
+	TIMSK0		= _BV(TOIE0);					// interrupt enable flags
+#else // !defined(NDEBUG)
+	TIMSK0		= 0;							// disable TIMER0 interrupts
+#endif // !defined(NDEBUG)
 
 	/*	configure SLEEP mode
 	**	sleep modes - 0b10=power-down, 0b01=ADC noise reduction, 0b00=IDLE
 	*/
-	SMCR	= (0 << SM1) | (0 << SM0) | (0 << SE);	// enable SLEEP to IDLE mode
+	SMCR		= (0 << SM1) | (0 << SM0) | (1 << SE);	// enable SLEEP to IDLE mode
 
 	//	disable TIMER1, SPI and ADC for power reduction
-	PRR		= _BV(PRTIM1) | _BV(PRSPI) | _BV(PRADC);
+	PRR			= _BV(PRTIM1) | _BV(PRSPI) | _BV(PRADC);
 
-	/*	configure TWI serial I2C interface
-	**	configure for interrupt driven SLAVE
-	**	at 100kHz bus clock one data byte received every 90ys (720 CPU cycles)
-	**	at 400kHz bus clock one data byte received every 22.5ys (180 CPU cycles)
-	*/
-	TWBR	= 0xff;								// TWI bit rate
-	TWAR	= FW_I2CSLA << 1;					// TWI slave address
-	TWCR	= _BV(TWEA) | _BV(TWEN) | _BV(TWINT) | _BV(TWIE);
-	//PRR		&= ~_BV(PRTWI);						// disable PRTWI flag bit
-
-#if defined(USE_LEDWRITE)
-	// setting byte3!=0 is write indicator for loop
-	LED_CFG		= (1ull << 24) | _BV(6);		//	enable LED drivers auto-off
-	LED_GAIN	= (1ull << 24);					//	clear LED2472G shift register gain
-#else
-	write_data(0x00000040ull, CONF_WRITE);		//	configure LED2472G shift register
-	write_data(0x00000000ull, GAIN_WRITE);		//	clear LED2472G shift register gain
-#endif
+	// write LED2472G configuration and default gain from registers
+	write_data(LED_CFG, CONF_WRITE);			//	configure LED2472G shift register
+	write_data(LED_GAIN, GAIN_WRITE);			//	clear LED2472G shift register gain
 
 	_looping	= 0;
 	while(TRUE)
 	{
-		//	to keep watchdog in interrupt+reset mode, interrupt needs to be reenabled after every occureance
-		WDTCSR	|= _BV(WDIE);					// enable watchdog timer interrupt - will be cleared automatically if interrupt+reset mode
+#if !defined(NDEBUG) || defined(USE_REGWRITE)
+		/*	to keep watchdog in interrupt+reset mode, interrupt needs to be reenabled after every occureance
+		**	BUT in release firmware we WANT the watchdog to reset the device by default
+		*/
+		WDTCSR		= wdt_reg;					// enable watchdog timer interrupt - will be cleared automatically if interrupt+reset mode
+#endif // !defined(NDEBUG) || defined(USE_REGWRITE)
 		wdt_reset();							// reset watchdog timer
 		sei();									// Set Enable global Interrupts
 
@@ -369,20 +378,25 @@ int main(void)
 #endif // defined(USE_REGWRITE)
 
 		}
-		else if(0 == (_looping & 0x07))			// every 8th run
+		else if(4 == (_looping & 0x0F))			// every 16th run
 		{
 			read_registers();
 		}
 
 #if defined(USE_LEDREAD) || defined(USE_LEDWRITE)
-		else
+		else if(4 > (_looping >> 6))			// every 64,128,172,256th run
 		{
 #	if defined(USE_LEDWRITE)
-			write_led();
+			write_led(_looping >> 6);
+#	else // defined(USE_LEDWRITE)
+			read_led(_looping >> 6);
 #	endif // defined(USE_LEDWRITE)
-		read_led(_looping & 0x1F);
 		}
 #endif // defined(USE_LEDREAD) || defined(USE_LEDWRITE)
+
+#if !defined(NDEBUG)
+		reg_ui8(0,0xCF)		= _looping;			// copy looping counter for debugging
+#endif // !defined(NDEBUG)
 
 #ifdef USE_SLEEP
 		if(0 == runflags.inprogress)
@@ -392,13 +406,13 @@ int main(void)
 			clr(PORTC, LED_OE_N);
 			// only if I2C operation ended and redraw unnecessary
 			sei();								// enable interrupts before SLEEP
-			SMCR	|= (1 << SE);				// enable SLEEP mode
-			TIMSK0	&= ~(1 << TOIE0);			// clear TOI0 interrupt enable flags
+			SMCR	|= _BV(SE);					// enable SLEEP mode
+			TIMSK0	&= ~_BV(TOIE0);				// clear TOI0 interrupt enable flags
 			sleep_cpu();						// sleep and wait for interrupt
-			SMCR	&= ~(1 << SE);				// clear SLEEP enable flag
-			TIMSK0	|= (1 << TOIE0);			// set TOI0 interrupt enable flags
 			_NOP();
 			_NOP();								// just to be sure a little delay after wake up from SLEEP
+			SMCR	&= ~_BV(SE);				// clear SLEEP enable flag
+			TIMSK0	|= _BV(TOIE0);				// set TOI0 interrupt enable flags
 		}
 #endif
 
