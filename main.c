@@ -344,8 +344,8 @@ int main(void)
 	PRR			= _BV(PRTIM1) | _BV(PRSPI) | _BV(PRADC);
 
 	// write LED2472G configuration and default gain from registers
-	write_data(LED_CFG, CONF_WRITE);			//	configure LED2472G shift register
-	write_data(LED_GAIN, GAIN_WRITE);			//	clear LED2472G shift register gain
+	write_data(reg_ui32(0,REG_LED_CONF), CONF_WRITE);			//	configure LED2472G shift register
+	write_data(reg_ui32(0,REG_LED_GAIN), GAIN_WRITE);			//	clear LED2472G shift register gain
 
 	_looping	= 0;
 	while(TRUE)

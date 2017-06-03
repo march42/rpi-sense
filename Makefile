@@ -7,8 +7,6 @@ ifeq ($(DEBUG),)
 # DEBUG unset or empty
 # disable debugging code and optimizations
 OPTIMIZE		= -Os -g0 -DNDEBUG
-# enable code to validate register address
-CDEFINES	+= -DI2C_VALIDATE_ADDRESS
 # enable code for LED2472G read
 CDEFINES	+= -DUSE_LEDREAD
 
@@ -28,6 +26,8 @@ endif
 
 ifneq ($(I2C_PAGES),)
 CDEFINES	+= -DI2C_PAGES=$(I2C_PAGES)
+# enable code to validate register address
+CDEFINES	+= -DI2C_VALIDATE_ADDRESS
 endif
 
 ifneq ($(DISABLE_EXTRAS),)
