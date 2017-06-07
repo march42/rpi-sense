@@ -35,3 +35,15 @@
 //	_VARIABLES_C_ used to indicate declaration of global variables
 #define _VARIABLES_C_
 #include "rpi-sense.h"
+
+/*__attribute__((naked))*/	uint8_t	ld_RAMPY(void)
+{
+	asm("LD r24,Y");
+	asm("RET");
+	return(0);	// dummy return to satisfy compiler - warning: control reaches end of non-void function
+}
+
+/*__attribute__((naked))*/	void	st_RAMPY(uint8_t DATA)
+{
+	asm("ST Y,r24");
+}

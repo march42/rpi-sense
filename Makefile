@@ -30,16 +30,20 @@ CDEFINES	+= -DI2C_PAGES=$(I2C_PAGES)
 CDEFINES	+= -DI2C_VALIDATE_ADDRESS
 endif
 
+ifneq ($(WRITE),)
+CDEFINES	+= -DUSE_REGWRITE
+CDEFINES	+= -DUSE_LEDWRITE
+endif
+
 ifneq ($(DISABLE_EXTRAS),)
 CDEFINES	= -DDISABLE_EXTRAS
-
-else
 endif
 
 ifneq (,$(findstring TWI_VECTOR_S,$(CDEFINES)))
 OBJ			+= rpi-sense-twi.o
 endif
 
+CDEFINES	+= -DTWI_DATA_RAMPY
 CC			= avr-gcc
 
 # Override is only needed by avr-lib build system.

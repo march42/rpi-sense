@@ -67,6 +67,7 @@ Basic considerations and procedure.
 | DISABLE_EXTRAS=1 | disable all extra code and unset compiler DEFINEs |
 | _DISABLE_EXTRAS=_ | enable USE_SLEEP and USE_LEDREAD |
 | I2C_PAGES=n | set compiler I2C_PAGES=n to enable n register pages |
+| WRITE=1 | set compiler USE_REGWRITE, USE_LEDWRITE |
 
 ```sh
 make all [DEBUG=1] [USESLEEP=1] [DISABLE_EXTRAS=1]

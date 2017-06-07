@@ -51,6 +51,8 @@ PWM		= 25
 **	PARAMH	TWDR
 **	PARAML	masked i2caddr
 **	PARAMH	I2C register DATA
+**
+**	YH:YL pointer is always used for I2C registers
 */
 TWI_vect:
 	;		save registers for ISR
@@ -64,7 +66,7 @@ TWI_vect:
 	SETFLAG_INPROGRESS							; set TWI/I2C in progress flag
 	LDS		PARAMH, TWSR						; load status register
 	ANDI	PARAMH, TW_STATUS_MASK				; mask out pre scaler bits
-	;BRBS	SREG_Z, TWI_vect_RESET				; TW_BUS_ERROR
+	BRBS	SREG_Z, TWI_vect_RESET				; TW_BUS_ERROR
 	;		check TW_STATUS
 	CPI		PARAMH, TW_ST_DATA_ACK				; slave transmitter data ACKnowledged
 	BREQ	TWI_vect_STDATA
@@ -79,11 +81,11 @@ TWI_vect:
 	CPI		PARAMH, TW_ST_LAST_DATA				; slave transmitter last byte acknowledged
 	BREQ	TWI_vect_STOP
 	CPI		PARAMH, TW_SR_DATA_NACK				; slave receiver data received NACK returned
-	BREQ	TWI_vect_SRADDR
+	BREQ	TWI_vect_STOP
 	CPI		PARAMH, TW_ST_DATA_NACK				; slave transmitter data sent NACK received
 	BREQ	TWI_vect_STOP
-	CPI		PARAMH, TW_BUS_ERROR				; I2C bus error
-	BREQ	TWI_vect_RESET
+	;CPI		PARAMH, TW_BUS_ERROR				; I2C bus error
+	;BREQ	TWI_vect_RESET
 	// I2C spec: "If two or more masters try to put information onto the bus, the first to produce a ‘one’ when the other produces a ‘zero’ will lose the arbitration"
 	CPI		PARAMH, TW_SR_ARB_LOST_SLA_ACK		; slave receiver arbitration lost in SLA+W
 	BREQ	TWI_vect_RESET
@@ -150,6 +152,12 @@ TWI_vect_STDATA:								; Slave Transmitter data acknowledged
 #	endif // defined(I2C_VALIDATE_ADDRESS)
 TWI_vect_STREG:									; Slave Transmitter send register data
 	;		load data from registers buffer
+#	if defined(TWI_DATA_RAMPY)
+	LD		PARAMH, Y							; load DATA from registers buffer
+	STS		TWDR, PARAMH						; store DATA to TWI buffer
+	LDI		PARAML, _BV(TWEA) | _BV(TWEN) | _BV(TWIE) | _BV(TWINT)
+	STS		TWCR, PARAML						; store flags to control register and clear interrupt flag
+#	else // defined(TWI_DATA_RAMPY)
 	PUSH	XH									; save RAM pointer register
 	PUSH	XL									; save RAM pointer register
 	LDI		XL, lo8(registers)					; load buffer address
@@ -163,6 +171,7 @@ TWI_vect_STREG:									; Slave Transmitter send register data
 	STS		TWCR, PARAML						; store flags to control register and clear interrupt flag
 	POP		XL									; restore RAM pointer register
 	POP		XH									; restore RAM pointer register
+#	endif // defined(TWI_DATA_RAMPY)
 	RJMP	TWI_vect_RETI						; jump to return
 
 TWI_vect_STINV:									; Slave Transmitter send INVALID data
@@ -254,6 +263,9 @@ TWI_vect_SRREG:
 	LDI		PARAML, _BV(TWEA) | _BV(TWEN) | _BV(TWIE) | _BV(TWINT)
 	STS		TWCR, PARAML						; store flags to control register and clear interrupt flag
 	;		write DATA to buffer
+#	if defined(TWI_DATA_RAMPY)
+	ST		Y, PARAMH							; store DATA to registers buffer
+#	else // defined(TWI_DATA_RAMPY)
 	PUSH	XH									; save RAM pointer register
 	PUSH	XL									; save RAM pointer register
 	LDI		XL, lo8(registers)					; load buffer address
@@ -263,6 +275,7 @@ TWI_vect_SRREG:
 	ST		X, PARAMH							; store DATA to buffer
 	POP		XL									; restore RAM pointer register
 	POP		XH									; restore RAM pointer register
+#	endif // defined(TWI_DATA_RAMPY)
 	SETFLAG_VALIDREG							; new register data to handle
 	RJMP	TWI_vect_RETI						; jump to return
 
@@ -300,6 +313,111 @@ TWI_vect_SREEWP0:
 	RJMP	TWI_vect_ACK						; jump to ACKnowledge
 .endfunc
 #endif	// !defined(TWI_VECTOR_M) && !defined(TWI_VECTOR_S)
+
+#if defined(USE_REGWRITE) && defined(TWI_DATA_RAMPY)
+.func	write_registers
+;		no parameters
+;		no return value
+write_registers:								; write new register value to given register
+	SFS_i2cflag(I2C_validreg)					; skip if validreg flag is set
+	RET											; return if validreg flag cleared
+	CLR_i2cflag(I2C_validreg)					; clear validreg flag
+	LD		TEMPREG, Y							; load register buffer DATA
+	CPI		i2caddr, REG_WDTCSR
+	BREQ	write_registers_WDTCSR
+	CPI		i2caddr, REG_SMCR
+	BREQ	write_registers_SMCR
+	CPI		i2caddr, REG_PINA
+	BREQ	write_registers_PINA
+	CPI		i2caddr, REG_DDRA
+	BREQ	write_registers_DDRA
+	CPI		i2caddr, REG_PORTA
+	BREQ	write_registers_PORTA
+	CPI		i2caddr, REG_PINB
+	BREQ	write_registers_PINB
+	CPI		i2caddr, REG_DDRB
+	BREQ	write_registers_DDRB
+	CPI		i2caddr, REG_PORTB
+	BREQ	write_registers_PORTB
+	CPI		i2caddr, REG_PINC
+	BREQ	write_registers_PINC
+	CPI		i2caddr, REG_DDRC
+	BREQ	write_registers_DDRC
+	CPI		i2caddr, REG_PORTC
+	BREQ	write_registers_PORTC
+	CPI		i2caddr, REG_PIND
+	BREQ	write_registers_PIND
+	CPI		i2caddr, REG_DDRD
+	BREQ	write_registers_DDRD
+	CPI		i2caddr, REG_PORTD
+	BREQ	write_registers_PORTD
+	CPI		i2caddr, REG_MCUSR
+	BREQ	write_registers_MCUSR
+	CPI		i2caddr, REG_MCUCR
+	BREQ	write_registers_MCUCR
+	CPI		i2caddr, REG_PORTCR
+	BREQ	write_registers_PORTCR
+	CPI		i2caddr, REG_PRR
+	BREQ	write_registers_PRR
+	RET											; return if register not in list
+write_registers_WDTCSR:
+	LDI		PARAML, _BV(WDCE) | _BV(WDE)		; enable watchdog change
+	STS		WDTCSR, PARAML						; store DATA to register
+	STS		WDTCSR, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_SMCR:
+	STS		SMCR, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_PINA:
+	STS		PINA, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_DDRA:
+	STS		DDRA, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_PORTA:
+	STS		PORTA, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_PINB:
+	STS		PINB, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_DDRB:
+	STS		DDRB, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_PORTB:
+	STS		PORTB, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_PINC:
+	STS		PINC, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_DDRC:
+	STS		DDRC, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_PORTC:
+	STS		PORTC, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_PIND:
+	STS		PIND, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_DDRD:
+	STS		DDRD, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_PORTD:
+	STS		PORTD, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_MCUSR:
+	STS		MCUSR, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_MCUCR:
+	STS		MCUCR, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_PORTCR:
+	STS		PORTCR, TEMPREG						; store DATA to register
+	RET											; return
+write_registers_PRR:
+	STS		PRR, TEMPREG						; store DATA to register
+	RET											; return
+.endfunc
+#endif // defined(USE_REGWRITE) && defined(TWI_DATA_RAMPY)
 
 .func	SYSTEM_RESET							; execute SYSTEM_RESET procedure
 ;	no parameters
@@ -363,16 +481,16 @@ SYSTEM_RESET_SLEEP:
 .func	draw_loop
 draw_loop:
 	;		save registers
-	PUSH	YH								; r29, YH pointer
-	PUSH	YL								; r28, YL pointer
+	PUSH	XH								; r27, XH pointer
+	PUSH	XL								; r26, XL pointer
 	PUSH	PWM								; r25, PWM
 	PUSH	LINE							; r24, LINE, PARAM
 	PUSH	r21								; bits to transmit
 	PUSH	r20								; pixels register
 	;		prepare
 	CBI		_SFR_IO_ADDR(PORTC), FRAME_INT	; clear FRAME_INT interrupt flag
-	LDI		YL, lo8(pixels)					; load memory address of pixels buffer to Y register
-	LDI		YH, hi8(pixels)
+	LDI		XL, lo8(pixels)					; load memory address of pixels buffer to Y register
+	LDI		XH, hi8(pixels)
 	LDI		LINE, 0xFE						; LINE=0xFE bit 0 cleared
 
 draw_loop_line:									; 8 run loop send line to LED2472G
@@ -382,12 +500,12 @@ draw_loop_line:									; 8 run loop send line to LED2472G
 draw_loop_col:								; set bits to transmit counter
 	LDI		r21, 24							; number of bits 8R+8G+8B to transmit
 draw_loop_bit:								; 24 run loop send bits to LED2472G
-	LD		r20, Y+							; load pixels register
+	LD		r20, X+							; load pixels register
 	CP		PWM, r20
-	BRSH	draw_loop_5DI0					; PWM >= r20
+	BRSH	draw_loop_SDI0					; PWM >= r20
 	SBI		_SFR_IO_ADDR(PORTC), LED_SDI	; set SDI active-high
 	RJMP	draw_loop_SDI1					; PWM < r20
-draw_loop_5DI0:
+draw_loop_SDI0:
 	CBI		_SFR_IO_ADDR(PORTC), LED_SDI	; set SDI active-low
 draw_loop_SDI1:
 	CPI		r21, 1
@@ -421,8 +539,8 @@ draw_loop_nextline:							; line loop ended
 	POP		r21
 	POP		LINE
 	POP		PWM
-	POP		YL								; r28, YL pointer
-	POP		YH								; r29, YH pointer
+	POP		XL								; r26, XL pointer
+	POP		XH								; r27, XH pointer
 	; continue with joystick reading
 	RJMP	check_keys
 .endfunc

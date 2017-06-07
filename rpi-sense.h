@@ -39,7 +39,7 @@
 
 #	define	FW_I2CSLA			0x46
 #	define	FW_I2CID			's'
-#	define	VERSION				0x02
+#	define	VERSION				0x03
 #	ifndef	NDEBUG
 #		define FW_VERSION		(0xA0 | VERSION)			/* debug version */
 #	else
@@ -47,6 +47,7 @@
 #	endif
 
 #	include <avr/io.h>
+#	include <avr/sfr_defs.h>
 #	include <util/twi.h>
 
 #	if defined(__ASSEMBLER__)
@@ -128,11 +129,17 @@
 #	endif // (I2C_PAGES>4 ?7 :(I2C_PAGES>2 ?3 :(I2C_PAGES -1)))
 
 #	define	ZEROREG			r1
+#	define	TEMPREG			r0
 
 #	if defined(__ASSEMBLER__)
 		//	.S inline assembler files
-		i2caddr				= 14
-		i2cpage				= 15
+#		if defined(TWI_DATA_RAMPY)
+			i2caddr			= 28
+			i2cpage			= 29
+#		else // defined(TWI_DATA_RAMPY)
+			i2caddr			= 14
+			i2cpage			= 15
+#		endif // defined(TWI_DATA_RAMPY)
 		i2cflags			= 16
 
 		PARAML				= 24
@@ -194,6 +201,7 @@
 		.global read_data
 		.global write_data
 		.global TWI_vect
+		.global write_registers
 		.global	check_keys
 		.global	SYSTEM_RESET
 
@@ -211,6 +219,8 @@
 			.equiv	LED_THERMAL	, (registers + REG_LED_THERMAL)
 #		endif
 
+#		define	DEC_i2caddr				DEC i2caddr
+#		define	INC_i2caddr				INC i2caddr
 #		define	CLR_i2cflags			CLR i2cflags
 #		define	SET_i2cflag(bit)		SBR i2cflags, (1 << bit)
 #		define	SFS_i2cflag(bit)		SBRS i2cflags, bit
@@ -222,10 +232,22 @@
 #	else	/* !defined(__ASSEMBLER__) */
 		//	.c/.cpp C/C++ source files
 
-		//register uint8_t	*regptr		asm("XL");
-		register uint8_t	i2caddr		asm("r14");
-		register uint8_t	i2cpage		asm("r15");
-		//register uint8_t	i2cflags	asm("r18");
+#		if defined(TWI_DATA_RAMPY)
+			register union i2creg_enum
+			{
+				uint8_t		*ptr;
+				uint8_t		ui8 [2];
+			}	i2creg	asm("r28");
+			uint8_t	ld_RAMPY(void);
+			void	st_RAMPY(uint8_t DATA);
+#			define	i2caddr	(i2creg.ui8[0])
+#			define	i2cpage	(i2creg.ui8[1])
+#		else // defined(TWI_DATA_RAMPY)
+			register uint8_t	i2caddr		asm("r14");
+			register uint8_t	i2cpage		asm("r15");
+#		endif // defined(TWI_DATA_RAMPY)
+#		define	DEC_i2caddr				asm volatile("DEC %0":"=r" (i2caddr):)
+#		define	INC_i2caddr				asm volatile("INC %0":"=r" (i2caddr):)
 
 		struct runtimeflag_bits {
 			unsigned char inprogress:1;			// I2C transaction in progress
@@ -392,6 +414,9 @@
 		extern void delay(uint8_t ticks);
 		extern void write_data(uint32_t data, le_key type);
 		extern uint32_t read_data(le_key type);
+		extern void write_registers(void);
+		extern uint8_t ld_RAMPY(void);
+		extern void st_RAMPY(uint8_t DATA);
 
 #	endif	/* defined(__ASSEMBLER__) */
 

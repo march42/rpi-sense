@@ -80,87 +80,72 @@ __fuse_t __fuse __attribute__((section (".fuse"))) =
 
 /*	routines for I2C register handling
 */
-#if	defined(USE_REGWRITE)
+#if	defined(USE_REGWRITE) && !defined(TWI_DATA_RAMPY)
 void write_registers(void)
 {
-	// watchdog control
-	if(REG_WDTCSR == i2caddr)
+	switch(i2caddr)
 	{
+	// watchdog control
+	case REG_WDTCSR:
 		WDTCSR	= _BV(WDCE) | _BV(WDE);	// enable watchdog change
 		WDTCSR	= reg_ui8(0,REG_WDTCSR);
-	}
+		break;
 	// sleep mode control
-	else if(REG_SMCR == i2caddr)
-	{
+	case REG_SMCR:
 		SMCR	= reg_ui8(0,REG_SMCR);
-	}
+		break;
 	// copy debugging registers (0xEx)
-	else if(REG_PINA == i2caddr)
-	{
+	case REG_PINA:
 		PINA	= reg_ui8(0,REG_PINA);
-	}
-	else if(REG_DDRA == i2caddr)
-	{
+		break;
+	case REG_DDRA:
 		DDRA	= reg_ui8(0,REG_DDRA);
-	}
-	else if(REG_PORTA == i2caddr)
-	{
+		break;
+	case REG_PORTA:
 		PORTA	= reg_ui8(0,REG_PORTA);
-	}
-	else if(REG_PINB == i2caddr)
-	{
+		break;
+	case REG_PINB:
 		PINB	= reg_ui8(0,REG_PINB);
-	}
-	else if(REG_DDRB == i2caddr)
-	{
+		break;
+	case REG_DDRB:
 		DDRB	= reg_ui8(0,REG_DDRB);
-	}
-	else if(REG_PORTB == i2caddr)
-	{
+		break;
+	case REG_PORTB:
 		PORTB	= reg_ui8(0,REG_PORTB);
-	}
-	else if(REG_PINC == i2caddr)
-	{
+		break;
+	case REG_PINC:
 		PINC	= reg_ui8(0,REG_PINC);
-	}
-	else if(REG_DDRC == i2caddr)
-	{
+		break;
+	case REG_DDRC:
 		DDRC	= reg_ui8(0,REG_DDRC);
-	}
-	else if(REG_PORTC == i2caddr)
-	{
+		break;
+	case REG_PORTC:
 		PORTC	= reg_ui8(0,REG_PORTC);
-	}
-	else if(REG_PIND == i2caddr)
-	{
+		break;
+	case REG_PIND:
 		PIND	= reg_ui8(0,REG_PIND);
-	}
-	else if(REG_DDRD == i2caddr)
-	{
+		break;
+	case REG_DDRD:
 		DDRD	= reg_ui8(0,REG_DDRD);
-	}
-	else if(REG_PORTD == i2caddr)
-	{
+		break;
+	case REG_PORTD:
 		PORTD	= reg_ui8(0,REG_PORTD);
-	}
-	else if(REG_MCUSR == i2caddr)
-	{
+		break;
+	case REG_MCUSR:
 		MCUSR	= reg_ui8(0,REG_MCUSR);
-	}
-	else if(REG_MCUCR == i2caddr)
-	{
+		break;
+	case REG_MCUCR:
 		MCUCR	= reg_ui8(0,REG_MCUCR);
-	}
-	else if(REG_PORTCR == i2caddr)
-	{
+		break;
+	case REG_PORTCR:
 		PORTCR	= reg_ui8(0,REG_PORTCR);
-	}
-	else if(REG_PRR == i2caddr)
-	{
+		break;
+	case REG_PRR:
 		PRR		= reg_ui8(0,REG_PRR);
+		break;
 	}
 }
-#endif	// defined(USE_REGWRITE)
+#endif	// defined(USE_REGWRITE) && !defined(TWI_DATA_RAMPY)
 
 void read_registers(void)
 {
@@ -196,16 +181,6 @@ void write_led(uint8_t _looping)
 	switch(_looping &0x3)
 	{
 	case 0:
-		if(1 == reg_ui8(0, REG_LED_GAIN +3))		// check write indicator flag
-		{
-			//	unused byte3 (bit31-24) used as write indicator flag
-			write_data(LED_GAIN,GAIN_WRITE);
-			//reg_ui8(0, REG_LED_GAIN +3)		= 0;	// clear write indicator flag
-		}
-		LED_GAIN	= read_data(GAIN_READ);
-		break;
-	case 1:
-		LED_ERROR	= read_data(DET_OPEN_SHORT);
 		if(1 == reg_ui8(0, REG_LED_CONF +3))		// check write indicator flag
 		{
 			//	unused byte3 (bit31-24) used as write indicator flag
@@ -214,7 +189,17 @@ void write_led(uint8_t _looping)
 		}
 		LED_CFG		= read_data(CONF_READ);
 		break;
+	case 1:
+		LED_ERROR	= read_data(DET_OPEN_SHORT);
+		break;
 	case 2:
+		if(1 == reg_ui8(0, REG_LED_GAIN +3))		// check write indicator flag
+		{
+			//	unused byte3 (bit31-24) used as write indicator flag
+			write_data(LED_GAIN,GAIN_WRITE);
+			//reg_ui8(0, REG_LED_GAIN +3)		= 0;	// clear write indicator flag
+		}
+		LED_GAIN	= read_data(GAIN_READ);
 		break;
 	case 3:
 		LED_THERMAL	= read_data(THERM_READ);
@@ -229,9 +214,9 @@ void read_led(uint8_t _looping)
 	if(0xFF == _looping || 0 == (_looping &0x3))
 		LED_CFG		= read_data(CONF_READ);
 	if(0xFF == _looping || 1 == (_looping &0x3))
-		LED_GAIN	= read_data(GAIN_READ);
-	if(0xFF == _looping || 2 == (_looping &0x3))
 		LED_ERROR	= read_data(DET_OPEN_SHORT);
+	if(0xFF == _looping || 2 == (_looping &0x3))
+		LED_GAIN	= read_data(GAIN_READ);
 	if(0xFF == _looping || 3 == (_looping &0x3))
 		LED_THERMAL	= read_data(THERM_READ);
 }
@@ -262,8 +247,13 @@ int main(void)
 
 	/*	variable initialization and preparation
 	*/
-	i2cpage		= 0;							// set i2cpage to first page
-	i2caddr		= 0xFF;							// set i2caddr to -1, gets incremented to 0 on first read
+#	if defined(TWI_DATA_RAMPY)
+		i2creg.ptr	= (uint8_t*)&registers;		// set address of registers
+		DEC_i2caddr;							// decrement address - will be incremented before access
+#	else // defined(TWI_DATA_RAMPY)
+		i2cpage		= 0;						// set register page to 0
+		i2caddr		= 0xFF;						// set address of registers to -1 - will be incremented before access
+#	endif // defined(TWI_DATA_RAMPY)
 	CLR_i2cflags;								// clear all flags
 
 	/*	configure TWI serial I2C interface
@@ -342,6 +332,14 @@ int main(void)
 
 	//	disable TIMER1, SPI and ADC for power reduction
 	PRR			= _BV(PRTIM1) | _BV(PRSPI) | _BV(PRADC);
+	/*
+	**	#define __AVR_HAVE_PRR	((1<<PRADC)|(1<<PRSPI)|(1<<PRTIM1)|(1<<PRTIM0)|(1<<PRTWI))
+	**	#define __AVR_HAVE_PRR_PRADC
+	**	#define __AVR_HAVE_PRR_PRSPI
+	**	#define __AVR_HAVE_PRR_PRTIM1
+	**	#define __AVR_HAVE_PRR_PRTIM0
+	**	#define __AVR_HAVE_PRR_PRTWI
+	*/
 
 	// write LED2472G configuration and default gain from registers
 	write_data(reg_ui32(0,REG_LED_CONF), CONF_WRITE);			//	configure LED2472G shift register

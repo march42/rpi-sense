@@ -78,7 +78,7 @@
     </ToolchainSettings>
     <UsesExternalMakeFile>True</UsesExternalMakeFile>
     <OutputDirectory>$(MSBuildProjectDirectory)\</OutputDirectory>
-    <BuildTarget>all</BuildTarget>
+    <BuildTarget>all WRITE=1</BuildTarget>
     <CleanTarget>clean</CleanTarget>
     <ExternalMakeFilePath>$(MSBuildProjectDirectory)\Makefile</ExternalMakeFilePath>
   </PropertyGroup>
