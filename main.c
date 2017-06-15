@@ -34,7 +34,7 @@
 
 ISR(BADISR_vect, ISR_NAKED)
 {
-	/*	maybe here must the interrupt flags be cleared
+	/*	interrupt flags will be cleared by hardware on RETI
 	*/
 	reti();										//	do nothing, just return
 }
@@ -52,20 +52,37 @@ ISR(SPI_STC_vect, ISR_ALIASOF(BADISR_vect));
 ISR(ADC_vect, ISR_ALIASOF(BADISR_vect));
 ISR(EE_READY_vect, ISR_ALIASOF(BADISR_vect));
 ISR(ANALOG_COMP_vect, ISR_ALIASOF(BADISR_vect));
+/*	defined in rpi-sense.S	ISR(TWI_vect, ISR_ALIASOF(BADISR_vect));	*/
 
-ISR(TIMER0_OVF_vect)
+ISR(TIMER0_OVF_vect, ISR_NAKED)
 {
 	//	without attribute ISR_NAKED registers get pushed, popped and RETI gets added
-	++counttmr;									// count (interrupt frequency 1/32768ns)
+	asm volatile(
+		"PUSH r0" "\n\t"
+		"LDS r0, (0x100 + %0)" "\n\t"
+		"INC r0" "\n\t"
+		"STS (0x100 + %0), r0" "\n\t"
+		"POP r0" "\n\t"
+		 : :"M"(REG_TOV0C));
+	asm volatile("RETI");
+	//++counttmr;									// count (interrupt frequency 1/32768ns)
 }
-ISR(TIMER0_COMPA_vect, ISR_ALIASOF(BADISR_vect));	// TIMER0 COMParator A unused
-ISR(TIMER0_COMPB_vect, ISR_ALIASOF(BADISR_vect));	// TIMER0 COMParator B unused
+ISR(TIMER0_COMPA_vect, ISR_ALIASOF(TIMER0_OVF_vect));	// TIMER0 COMParator A unused
+ISR(TIMER0_COMPB_vect, ISR_ALIASOF(TIMER0_OVF_vect));	// TIMER0 COMParator B unused
 
-ISR(WDT_vect)
+ISR(WDT_vect, ISR_NAKED)
 {
 	//	without attribute ISR_NAKED registers get pushed, popped and RETI gets added
-	++watchdog;									// count
 	//	watchdog ISR is only used for wakeup from SLEEP
+	asm volatile(
+	"PUSH r0" "\n\t"
+	"LDS r0, (0x100 + %0)" "\n\t"
+	"INC r0" "\n\t"
+	"STS (0x100 + %0), r0" "\n\t"
+	"POP r0" "\n\t"
+	: :"M"(REG_WDC));
+	asm volatile("RETI");
+	//++watchdog;									// count
 }
 
 __fuse_t __fuse __attribute__((section (".fuse"))) =
@@ -77,150 +94,6 @@ __fuse_t __fuse __attribute__((section (".fuse"))) =
 	.high = (FUSE_SPIEN & FUSE_BODLEVEL2 & FUSE_BODLEVEL0),	// FUSE_RSTDISBL, FUSE_DWEN, FUSE_WDTON, FUSE_EESAVE, FUSE_BODLEVEL1
 	.extended = (0xFF),	// FUSE_SELFPRGEN
 };
-
-/*	routines for I2C register handling
-*/
-#if	defined(USE_REGWRITE) && !defined(TWI_DATA_RAMPY)
-void write_registers(void)
-{
-	switch(i2caddr)
-	{
-	// watchdog control
-	case REG_WDTCSR:
-		WDTCSR	= _BV(WDCE) | _BV(WDE);	// enable watchdog change
-		WDTCSR	= reg_ui8(0,REG_WDTCSR);
-		break;
-	// sleep mode control
-	case REG_SMCR:
-		SMCR	= reg_ui8(0,REG_SMCR);
-		break;
-	// copy debugging registers (0xEx)
-	case REG_PINA:
-		PINA	= reg_ui8(0,REG_PINA);
-		break;
-	case REG_DDRA:
-		DDRA	= reg_ui8(0,REG_DDRA);
-		break;
-	case REG_PORTA:
-		PORTA	= reg_ui8(0,REG_PORTA);
-		break;
-	case REG_PINB:
-		PINB	= reg_ui8(0,REG_PINB);
-		break;
-	case REG_DDRB:
-		DDRB	= reg_ui8(0,REG_DDRB);
-		break;
-	case REG_PORTB:
-		PORTB	= reg_ui8(0,REG_PORTB);
-		break;
-	case REG_PINC:
-		PINC	= reg_ui8(0,REG_PINC);
-		break;
-	case REG_DDRC:
-		DDRC	= reg_ui8(0,REG_DDRC);
-		break;
-	case REG_PORTC:
-		PORTC	= reg_ui8(0,REG_PORTC);
-		break;
-	case REG_PIND:
-		PIND	= reg_ui8(0,REG_PIND);
-		break;
-	case REG_DDRD:
-		DDRD	= reg_ui8(0,REG_DDRD);
-		break;
-	case REG_PORTD:
-		PORTD	= reg_ui8(0,REG_PORTD);
-		break;
-	case REG_MCUSR:
-		MCUSR	= reg_ui8(0,REG_MCUSR);
-		break;
-	case REG_MCUCR:
-		MCUCR	= reg_ui8(0,REG_MCUCR);
-		break;
-	case REG_PORTCR:
-		PORTCR	= reg_ui8(0,REG_PORTCR);
-		break;
-	case REG_PRR:
-		PRR		= reg_ui8(0,REG_PRR);
-		break;
-	}
-}
-#endif	// defined(USE_REGWRITE) && !defined(TWI_DATA_RAMPY)
-
-void read_registers(void)
-{
-	//	copy register data to buffer
-	reg_ui8(0,REG_EE_WP)	= ((PORTB & _BV(EE_WP)) ?0 :1);	// copy EEPROM_WP disabled to I2C data buffer
-	reg_ui8(0,REG_WDTCSR)	= WDTCSR;	// copy register to I2C data buffer
-	reg_ui8(0,REG_SMCR)		= SMCR;		// copy register to I2C data buffer
-
-#	if !defined(NDEBUG) || defined(USE_REGWRITE)
-		// copy debugging registers (0xEx) to I2C data buffer
-		reg_ui8(0,REG_PINA)		= PINA;		// copy register to I2C data buffer
-		reg_ui8(0,REG_DDRA)		= DDRA;		// copy register to I2C data buffer
-		reg_ui8(0,REG_PORTA)	= PORTA;	// copy register to I2C data buffer
-		reg_ui8(0,REG_PINB)		= PINB;		// copy register to I2C data buffer
-		reg_ui8(0,REG_DDRB)		= DDRB;		// copy register to I2C data buffer
-		reg_ui8(0,REG_PORTB)	= PORTB;	// copy register to I2C data buffer
-		reg_ui8(0,REG_PINC)		= PINC;		// copy register to I2C data buffer
-		reg_ui8(0,REG_DDRC)		= DDRC;		// copy register to I2C data buffer
-		reg_ui8(0,REG_PORTC)	= PORTC;	// copy register to I2C data buffer
-		reg_ui8(0,REG_PIND)		= PIND;		// copy register to I2C data buffer
-		reg_ui8(0,REG_DDRD)		= DDRD;		// copy register to I2C data buffer
-		reg_ui8(0,REG_PORTD)	= PORTD;	// copy register to I2C data buffer
-		reg_ui8(0,REG_MCUSR)	= MCUSR;	// copy register to I2C data buffer
-		reg_ui8(0,REG_MCUCR)	= MCUCR;	// copy register to I2C data buffer
-		reg_ui8(0,REG_PORTCR)	= PORTCR;	// copy register to I2C data buffer
-		reg_ui8(0,REG_PRR)		= PRR;		// copy register to I2C data buffer
-#	endif	// !defined(NDEBUG) || defined(USE_REGWRITE)
-}
-
-#if defined(USE_LEDWRITE)
-void write_led(uint8_t _looping)
-{
-	switch(_looping &0x3)
-	{
-	case 0:
-		if(1 == reg_ui8(0, REG_LED_CONF +3))		// check write indicator flag
-		{
-			//	unused byte3 (bit31-24) used as write indicator flag
-			write_data(LED_CFG,CONF_WRITE);
-			//reg_ui8(0, REG_LED_CONF +3)		= 0;	// clear write indicator flag
-		}
-		LED_CFG		= read_data(CONF_READ);
-		break;
-	case 1:
-		LED_ERROR	= read_data(DET_OPEN_SHORT);
-		break;
-	case 2:
-		if(1 == reg_ui8(0, REG_LED_GAIN +3))		// check write indicator flag
-		{
-			//	unused byte3 (bit31-24) used as write indicator flag
-			write_data(LED_GAIN,GAIN_WRITE);
-			//reg_ui8(0, REG_LED_GAIN +3)		= 0;	// clear write indicator flag
-		}
-		LED_GAIN	= read_data(GAIN_READ);
-		break;
-	case 3:
-		LED_THERMAL	= read_data(THERM_READ);
-		break;
-	}
-}
-#endif // defined(USE_LEDWRITE)
-
-#if	defined(USE_LEDREAD) || defined(USE_LEDWRITE)
-void read_led(uint8_t _looping)
-{
-	if(0xFF == _looping || 0 == (_looping &0x3))
-		LED_CFG		= read_data(CONF_READ);
-	if(0xFF == _looping || 1 == (_looping &0x3))
-		LED_ERROR	= read_data(DET_OPEN_SHORT);
-	if(0xFF == _looping || 2 == (_looping &0x3))
-		LED_GAIN	= read_data(GAIN_READ);
-	if(0xFF == _looping || 3 == (_looping &0x3))
-		LED_THERMAL	= read_data(THERM_READ);
-}
-#endif // USE_LEDREAD || USE_LEDWRITE
 
 /*	I/O port fundamentals
 **	PINx	I/O address
@@ -244,6 +117,9 @@ void read_led(uint8_t _looping)
 int main(void)
 {
 	uint8_t _looping		= 0;				// local counter variable for main working loop
+#	if !defined(USE_SLEEP)
+	uint8_t _waitT0			= 0;				// local wait variable for main loop
+#	endif // !defined(USE_SLEEP)
 
 	/*	variable initialization and preparation
 	*/
@@ -256,12 +132,27 @@ int main(void)
 #	endif // defined(TWI_DATA_RAMPY)
 	CLR_i2cflags;								// clear all flags
 
+	/*	configure clocks
+	**	CLKPR pre-scaler is set to 0b0011 if CKDIV8 fuse is programmed, to 0b0000 otherwise
+	**	CLKPS 0000==1, 0001==2, 0010==4, 0011==8, 0100==16, 0101==32, 0110==64, 0111==128, 1000==256
+	**	clock cycle is 125ns at 8MHz, 250ns at 4MHz
+	*/
+	CLKPR		= _BV(CLKPCE);					// enable CLKPS change
+	CLKPR		= DEFAULT_CLKPR;				// clock pre-scaler 8MHz or 4MHz
+
 	/*	configure TWI serial I2C interface
 	**	configure for interrupt driven SLAVE
 	**	at 100kHz bus clock one data byte received every 90ys (720 CPU cycles)
 	**	at 400kHz bus clock one data byte received every 22.5ys (180 CPU cycles)
+	**	normal mode (TWHSR &_BV(TWHS) ==0) - TWI clock is fed from I/O clock clkIO
+	**	high speed mode (TWHSR==_BV(TWHS)) - TWI clock is fed from system clock clkCPU, clkIO must be EXACTLY clkCPU/2
+	**	TWSR, twi_prescalerbits(0-3) selects pre-scaler 1, 4, 16, 64
+	**	fSCL = clkIO/clkCPU / (16 + (2 * TWBR * TWPS))
+	**	in master mode TWBR must be >=10 so maximum TWI speed is 222kHz
 	*/
-	TWBR		= 0xff;							// TWI bit rate
+	TWSR		= DEFAULT_TWSR;					// set pre-scaler
+	TWHSR		= DEFAULT_TWHSR;				// TWHS bit flag defined in headers as TWIHS
+	TWBR		= DEFAULT_TWBR;					// TWI bit rate
 	TWAR		= FW_I2CSLA << 1;				// TWI slave address
 	TWCR		= _BV(TWEA) | _BV(TWEN) | _BV(TWINT) | _BV(TWIE);
 	//PRR			&= ~_BV(PRTWI);					// disable PRTWI flag bit
@@ -283,21 +174,12 @@ int main(void)
 	DDRC		= _BV(LED_SDI) | _BV(LED_CLKR) | _BV(LED_LE) | _BV(LED_OE_N);
 	DDRD		= 0xFF;
 
-	/*	configure clocks
-	**	CLKPR pre-scaler is set to 0b0011 if CKDIV8 fuse is programmed, to 0b0000 otherwise
-	**	CLKPS 0000==1, 0001==2, 0010==4, 0011==8, 0100==16, 0101==32, 0110==64, 0111==128, 1000==256
-	**	clock cycle is 125ns at 8MHz
-	*/
-	CLKPR		= _BV(CLKPCE);					// enable CLKPS change
-	CLKPR		= clock_prescalerbits(0);		// no clock pre-scaler divisor (8MHz)
-
 	/*	watchdog has on chip 128kHz oscillator
 	**	prescaler bits 0=2k, 1=4k, 2=8k, 3=16k, 4=32k, 5=64k, 6=128k, 7=256k, 8=512k, 9=1024k
 	**	timeout 0=16ms, 1=32ms, 2=64ms, 3=125ms, 4=250ms, 5=500ms, 6=1s, 7=2s, 8=4s, 9=8s
 	*/
 	watchdog	= 0;							// clear watchdog counter
 	wdt_reset();								// reset watchdog timer
-	MCUSR		&= ~_BV(WDRF);					// clear WDRF flag
 	wdt_reg		= _BV(WDE) | watchdog_prescalerbits(6);	// enable watchdog reset
 #if !defined(NDEBUG)
 	wdt_reg		|= _BV(WDIE);					// enable interrupt and reset if NOT in release
@@ -312,18 +194,21 @@ int main(void)
 	**	TOV0 interrupt with prescaler==5 (clkT0=7.8125kHz, 128ys) overflow at 30Hz every 32768ys
 	**	TOV0 interrupt with prescaler==4 (clkT0=31.25kHz, 32ys) overflow at 122Hz every 8192ys
 	**	TOV0 interrupt with prescaler==3 (clkT0=125kHz, 8ys) overflow at 488Hz every 2048ys
+	**	for I2C_HIGHSPEED and clkIO=4MHz PS==5 sets clkT0=3.90625kHz, 256ys and overflow every 65536ys
 	*/
 	counttmr	= 0;							// clear TIMER0 overflow interrupt counter
-	TCNT0		= 0;							// clear timer0 counter register
-	OCR0A		= 0;							// clear timer0 output compare register
-	OCR0B		= 0;							// clear timer0 output compare register
-	TCCR0A		= timer0_prescalerbits(5);		// TWI clock select clkT0=clkIO/1024 =7812.5kHz, tT0=128ys
+	TCCR0A		= timer0_prescalerbits(5);		// TIMER0 clock select clkT0=clkIO/1024 =7812.5kHz, tT0=128ys
 	TIFR0		= 0;							// clear interrupt flag register
-#if !defined(NDEBUG)
-	TIMSK0		= _BV(TOIE0);					// interrupt enable flags
-#else // !defined(NDEBUG)
+#if defined(NDEBUG)
 	TIMSK0		= 0;							// disable TIMER0 interrupts
-#endif // !defined(NDEBUG)
+#else // defined(NDEBUG)
+#	if (I2C_HIGHSPEED)
+		OCR0A	= 0x7F;							// timer0 output compare register hits after value while overflow hits before value
+		TIMSK0	= _BV(TOIE0) | _BV(OCIE0A);		// enable comparator at half time to achieve 32768ys interrupt
+#	else // (I2C_HIGHSPEED)
+		TIMSK0	= _BV(TOIE0);					// interrupt enable flags
+#	endif // (I2C_HIGHSPEED)
+#endif // defined(NDEBUG)
 
 	/*	configure SLEEP mode
 	**	sleep modes - 0b10=power-down, 0b01=ADC noise reduction, 0b00=IDLE
@@ -348,6 +233,11 @@ int main(void)
 	_looping	= 0;
 	while(TRUE)
 	{
+#	if !defined(USE_SLEEP)
+		//	_waitT0 is used to synchronize main loop to 100Hz
+		_waitT0			= TCNT0;				// current T0 counter on loop start
+#	endif // !defined(USE_SLEEP)
+
 #if !defined(NDEBUG) || defined(USE_REGWRITE)
 		/*	to keep watchdog in interrupt+reset mode, interrupt needs to be reenabled after every occureance
 		**	BUT in release firmware we WANT the watchdog to reset the device by default
@@ -368,6 +258,7 @@ int main(void)
 			{
 				// ignore everything not on first page
 			}
+
 #if defined(USE_REGWRITE)
 			else
 			{
@@ -376,6 +267,7 @@ int main(void)
 #endif // defined(USE_REGWRITE)
 
 		}
+
 		else if(4 == (_looping & 0x0F))			// every 16th run
 		{
 			read_registers();
@@ -412,10 +304,18 @@ int main(void)
 			SMCR	&= ~_BV(SE);				// clear SLEEP enable flag
 			TIMSK0	|= _BV(TOIE0);				// set TOI0 interrupt enable flags
 		}
+#else
+#		if (I2C_HIGHSPEED)
+		while(39 > (uint8_t)(TCNT0 - _waitT0))
+#		else // (I2C_HIGHSPEED)
+		while(78 > (uint8_t)(TCNT0 - _waitT0))
+#		endif // (I2C_HIGHSPEED)
+		{
+			_NOP();								// wait
+		}
 #endif
 
 		_looping++;								// count
 	}
 
-	return(0);									// hopefully we never reach this
 }

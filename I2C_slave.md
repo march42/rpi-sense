@@ -61,16 +61,12 @@ Basic considerations and procedure.
 
 | **variable** | **explanation, notes** |
 |:---:|:--- |
-| DEBUG=1 | enable DEBUG<br/>set compiler USE_REGWRITE, USE_LEDWRITE |
-| _DEBUG=_ | disable DEBUG<br/>set compiler NDEBUG, USE_LEDREAD |
-| USESLEEP=1 | set compiler USE_SLEEP |
+| _DEBUG=_ | disable DEBUG and set NDEBUG |
+| DEBUG=1 | enable DEBUG |
 | DISABLE_EXTRAS=1 | disable all extra code and unset compiler DEFINEs |
-| _DISABLE_EXTRAS=_ | enable USE_SLEEP and USE_LEDREAD |
-| I2C_PAGES=n | set compiler I2C_PAGES=n to enable n register pages |
-| WRITE=1 | set compiler USE_REGWRITE, USE_LEDWRITE |
 
 ```sh
-make all [DEBUG=1] [USESLEEP=1] [DISABLE_EXTRAS=1]
+make all [DEBUG=1] [DISABLE_EXTRAS=1]
 ```
 
 #### compile time DEFINEs for avr-gcc

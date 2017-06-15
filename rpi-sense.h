@@ -32,10 +32,10 @@
 ** SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include "config.h"
+
 #ifndef	_RPI_SENSE_H_
 #	define	_RPI_SENSE_H_	__FILE__
-
-#	define	F_CPU	(8*1000*1000ull)
 
 #	define	FW_I2CSLA			0x46
 #	define	FW_I2CID			's'
@@ -45,6 +45,27 @@
 #	else
 #		define FW_VERSION		VERSION						/* release version */
 #	endif
+
+/*	configuration macros for register initialization
+*/
+#	define watchdog_prescalerbits(wdp)	(((wdp >> 3 &1) << WDP3) | ((wdp >> 2 &1) << WDP2) | ((wdp >> 1 &1) << WDP1) | ((wdp &1) << WDP0))
+#	define clock_prescalerbits(clkps)	(((clkps >> 3 &1) << CLKPS3) | ((clkps >> 2 &1) << CLKPS2) | ((clkps >> 1 &1) << CLKPS1) | ((clkps &1) << CLKPS0))
+#	define timer0_prescalerbits(cs0)	(((cs0 >> 2 &1) << CS02) | ((cs0 >> 1 &1) << CS01) | ((cs0 &1) << CS00))
+#	define twi_prescalerbits(twps)		(((twps >> 1 &1) << TWPS1) | ((twps &1) << TWPS0))
+
+/*	configuration based default values
+*/
+#	if (I2C_HIGHSPEED)
+#		define	DEFAULT_TWHSR	(1 << TWIHS)				// enable TWI high speed
+#		define	DEFAULT_CLKPR	clock_prescalerbits(1)		// clock pre-scaler 1/2 (4MHz)
+#		define	F_CPU			(4ull*1000*1000)			// fCPU=4MHz
+#	else // (I2C_HIGHSPEED)
+#		define	DEFAULT_TWHSR	(0 << TWIHS)				// disable TWI high speed
+#		define	DEFAULT_CLKPR	clock_prescalerbits(0)		// clock pre-scaler 1 ==8MHz
+#		define	F_CPU			(8ull*1000*1000)			// fCPU=8MHz
+#	endif // (I2C_HIGHSPEED)
+#	define		DEFAULT_TWSR	twi_prescalerbits(0)		// TWI clock pre-scaler 1
+#	define		DEFAULT_TWBR	((8000000ull/F_I2C/2) - 8)	// bit rate calculation
 
 #	include <avr/io.h>
 #	include <avr/sfr_defs.h>
@@ -113,9 +134,7 @@
 	**	register buffer page definition
 	**	external variable prototype
 	*/
-#	if !defined(I2C_PAGES)
-#		define	I2C_PAGES	(1)
-#	elif (1 < I2C_PAGES) && ((I2C_PAGES * 256) > ((RAMEND - RAMSTART) + 1))
+#	if (1 < I2C_PAGES) && ((I2C_PAGES * 256) > ((RAMEND - RAMSTART) + 1))
 #		error "Your CPU has insufficient SRAM for I2C_PAGES=x register pages"
 #	endif
 #	if (4 < I2C_PAGES)
@@ -196,14 +215,30 @@
 		.extern i2cflags
 		*/
 
-		.global	draw_loop
+		//	main.c
+		.global main
+		//	variables.c
+		.global ld_RAMPY
+		.global st_RAMPY
+		;.global write_registers
+		.global read_registers
+		//	rpi-sense.S
+		.global SYSTEM_RESET
+		.global draw_loop
+		.global check_keys
 		.global delay
-		.global read_data
-		.global write_data
+		//	i2c-lowlevel.S
 		.global TWI_vect
 		.global write_registers
-		.global	check_keys
-		.global	SYSTEM_RESET
+		//	led2472g-SPI.S
+		.global write_data
+		.global read_data
+		//	led2472g.c
+		.global write_led
+		.global read_led
+		//	rpi-sense-twi.c
+		.global	TWI_SRA_valid
+		.global	TWI_address_valid
 
 		.equiv	pixels		, (registers + REG_PIXELS)
 		.equiv	keys		, (registers + REG_KEYS)
@@ -408,21 +443,32 @@
 #			define	LED_THERMAL		(reg_ui32(0,REG_LED_THERMAL))
 #		endif
 
+		//	main.c
+		extern int main(void);
+		//	variables.c
+		extern uint8_t ld_RAMPY(void);
+		extern void st_RAMPY(uint8_t DATA);
+		//extern void write_registers(void);		// write I2C registers data to CPU registers
+		extern void read_registers(void);		// copy register data to I2C registers buffer
+		//	rpi-sense.S
 		extern void SYSTEM_RESET(void);
 		extern void draw_loop(void);
 		extern void check_keys(void);
 		extern void delay(uint8_t ticks);
+		//	i2c-lowlevel.S
+		//extern void TWI_vect(void);			// TWI ISR
+		extern void write_registers(void);		// write I2C registers data to CPU registers
+		//	led2472g-SPI.S
 		extern void write_data(uint32_t data, le_key type);
 		extern uint32_t read_data(le_key type);
-		extern void write_registers(void);
-		extern uint8_t ld_RAMPY(void);
-		extern void st_RAMPY(uint8_t DATA);
+		//	led2472g.c
+		extern void write_led(uint8_t _looping);
+		extern void read_led(uint8_t _looping);
+		//	rpi-sense-twi.c
+		extern	uint8_t TWI_SRA_valid(uint8_t address);
+		extern	uint8_t TWI_address_valid(uint8_t address);
 
 #	endif	/* defined(__ASSEMBLER__) */
-
-#	define watchdog_prescalerbits(wdp)	(((wdp >> 3 &1) << WDP3) | ((wdp >> 2 &1) << WDP2) | ((wdp >> 1 &1) << WDP1) | ((wdp &1) << WDP0))
-#	define clock_prescalerbits(clkps)	(((clkps >> 3 &1) << CLKPS3) | ((clkps >> 2 &1) << CLKPS2) | ((clkps >> 1 &1) << CLKPS1) | ((clkps &1) << CLKPS0))
-#	define timer0_prescalerbits(cs0)	(((cs0 >> 2 &1) << CS02) | ((cs0 >> 1 &1) << CS01) | ((cs0 &1) << CS00))
 
 #	define	SET_EE_WP		SET_OUTPUT(PORTB,EE_WP)	// EE_WP high==EE_WP enabled
 #	define	CLR_EE_WP		CLR_OUTPUT(PORTB,EE_WP)	// EE_WP low==EE_WP disabled
@@ -451,6 +497,7 @@
 #	define	CLRFLAG_NACK		CLR_i2cflag(I2C_NACK)
 #	define	SSFLAG_NACK			SFS_i2cflag(I2C_NACK)
 #	define	SCFLAG_NACK			SFC_i2cflag(I2C_NACK)
+
 #endif // _RPI_SENSE_H_
 
 /*	special registers

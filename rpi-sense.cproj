@@ -124,6 +124,18 @@
     <ExternalMakeFilePath>$(MSBuildProjectDirectory)\Makefile</ExternalMakeFilePath>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="config.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="i2c-lowlevel.S">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="led2472g-SPI.S">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="led2472g.c">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="main.c">
       <SubType>compile</SubType>
     </Compile>
