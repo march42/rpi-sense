@@ -39,87 +39,18 @@
 /*__attribute__((naked))*/	uint8_t	ld_RAMPY(void)
 {
 	register uint8_t DATA asm("r24");
-	asm("LD %0, Y" :"=r"(DATA) :);
-	return(DATA);	// dummy return to satisfy compiler - warning: control reaches end of non-void function
+	asm("DEC YL" "\n\t"
+		"LD %0, Y" "\n\t"
+		"INC YL" :"=r"(DATA) :);
+	return(DATA);	// DATA is on register r24 used for return
 }
 
 /*__attribute__((naked))*/	void	st_RAMPY(uint8_t DATA)
 {
-	asm("ST Y, %0" ::"r"(DATA));
+	asm("DEC YL" "\n\t"
+		"ST Y, %0" "\n\t"
+		"INC YL" ::"r"(DATA));
 }
-
-/*	routines for I2C register handling
-*/
-#if	defined(USE_REGWRITE) && !defined(TWI_DATA_RAMPY)
-void write_registers(void)
-{
-	/*
-	register uint8_t DATA asm("r24");
-	asm("LD %0, Y" :"=r"(DATA) :);
-	*/
-	switch(i2caddr)
-	{
-	// watchdog control
-	case REG_WDTCSR:
-		WDTCSR	= _BV(WDCE) | _BV(WDE);	// enable watchdog change
-		WDTCSR	= reg_ui8(0,REG_WDTCSR);
-		break;
-	// sleep mode control
-	case REG_SMCR:
-		SMCR	= reg_ui8(0,REG_SMCR);
-		break;
-	// copy debugging registers (0xEx)
-	case REG_PINA:
-		PINA	= reg_ui8(0,REG_PINA);
-		break;
-	case REG_DDRA:
-		DDRA	= reg_ui8(0,REG_DDRA);
-		break;
-	case REG_PORTA:
-		PORTA	= reg_ui8(0,REG_PORTA);
-		break;
-	case REG_PINB:
-		PINB	= reg_ui8(0,REG_PINB);
-		break;
-	case REG_DDRB:
-		DDRB	= reg_ui8(0,REG_DDRB);
-		break;
-	case REG_PORTB:
-		PORTB	= reg_ui8(0,REG_PORTB);
-		break;
-	case REG_PINC:
-		PINC	= reg_ui8(0,REG_PINC);
-		break;
-	case REG_DDRC:
-		DDRC	= reg_ui8(0,REG_DDRC);
-		break;
-	case REG_PORTC:
-		PORTC	= reg_ui8(0,REG_PORTC);
-		break;
-	case REG_PIND:
-		PIND	= reg_ui8(0,REG_PIND);
-		break;
-	case REG_DDRD:
-		DDRD	= reg_ui8(0,REG_DDRD);
-		break;
-	case REG_PORTD:
-		PORTD	= reg_ui8(0,REG_PORTD);
-		break;
-	case REG_MCUSR:
-		MCUSR	= reg_ui8(0,REG_MCUSR);
-		break;
-	case REG_MCUCR:
-		MCUCR	= reg_ui8(0,REG_MCUCR);
-		break;
-	case REG_PORTCR:
-		PORTCR	= reg_ui8(0,REG_PORTCR);
-		break;
-	case REG_PRR:
-		PRR		= reg_ui8(0,REG_PRR);
-		break;
-	}
-}
-#endif	// defined(USE_REGWRITE) && !defined(TWI_DATA_RAMPY)
 
 void read_registers(void)
 {

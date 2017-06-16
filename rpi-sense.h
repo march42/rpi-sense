@@ -123,7 +123,6 @@
 #	define	I2C_inprogress	0					// I2C transaction in progress
 #	define	I2C_modeADDR	1					// slave receiver register address
 #	define	I2C_validreg	2					// received valid register data, to be processed inside main()
-#	define	I2C_NACK		3					// disable automatic ACKnowledge
 
 /*	bit count values for LED2472G shift register
 **	LED_LE must rise after transmitting n-th bit
@@ -152,13 +151,8 @@
 
 #	if defined(__ASSEMBLER__)
 		//	.S inline assembler files
-#		if defined(TWI_DATA_RAMPY)
-			i2caddr			= 28
-			i2cpage			= 29
-#		else // defined(TWI_DATA_RAMPY)
-			i2caddr			= 14
-			i2cpage			= 15
-#		endif // defined(TWI_DATA_RAMPY)
+		i2caddr				= 28
+		i2cpage				= 29
 		i2cflags			= 16
 
 		PARAML				= 24
@@ -267,28 +261,23 @@
 #	else	/* !defined(__ASSEMBLER__) */
 		//	.c/.cpp C/C++ source files
 
-#		if defined(TWI_DATA_RAMPY)
-			register union i2creg_enum
-			{
-				uint8_t		*ptr;
-				uint8_t		ui8 [2];
-			}	i2creg	asm("r28");
-			uint8_t	ld_RAMPY(void);
-			void	st_RAMPY(uint8_t DATA);
-#			define	i2caddr	(i2creg.ui8[0])
-#			define	i2cpage	(i2creg.ui8[1])
-#		else // defined(TWI_DATA_RAMPY)
-			register uint8_t	i2caddr		asm("r14");
-			register uint8_t	i2cpage		asm("r15");
-#		endif // defined(TWI_DATA_RAMPY)
-#		define	DEC_i2caddr				asm volatile("DEC %0":"=r" (i2caddr):)
-#		define	INC_i2caddr				asm volatile("INC %0":"=r" (i2caddr):)
+		register union i2creg_enum
+		{
+			uint8_t		*ptr;
+			uint8_t		ui8 [2];
+		}	i2creg	asm("r28");
+		uint8_t	ld_RAMPY(void);
+		void	st_RAMPY(uint8_t DATA);
+#		define	i2caddr	(i2creg.ui8[0])
+#		define	i2cpage	(i2creg.ui8[1])
+#		define	DEC_i2caddr				asm volatile("DEC %0"::"r"(i2creg))
+#		define	INC_i2caddr				asm volatile("INC %0"::"r"(i2creg))
 
 		struct runtimeflag_bits {
 			unsigned char inprogress:1;			// I2C transaction in progress
 			unsigned char modeADDR:1;			// slave receiver register address
 			unsigned char validreg:1;			// received valid register data, to be processed inside main()
-			unsigned char NACK:1;				// disable automatic ACKnowledge
+			unsigned char bit3:1;
 			unsigned char bit4:1;
 			unsigned char bit5:1;
 			unsigned char bit6:1;
@@ -493,10 +482,6 @@
 #	define	CLRFLAG_VALIDREG	CLR_i2cflag(I2C_validreg)
 #	define	SSFLAG_VALIDREG		SFS_i2cflag(I2C_validreg)
 #	define	SCFLAG_VALIDREG		SFC_i2cflag(I2C_validreg)
-#	define	SETFLAG_NACK		SET_i2cflag(I2C_NACK)
-#	define	CLRFLAG_NACK		CLR_i2cflag(I2C_NACK)
-#	define	SSFLAG_NACK			SFS_i2cflag(I2C_NACK)
-#	define	SCFLAG_NACK			SFC_i2cflag(I2C_NACK)
 
 #endif // _RPI_SENSE_H_
 

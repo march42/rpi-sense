@@ -145,9 +145,7 @@ draw_loop_LE0:
 	INC		PWM								; PWM++
 	SBRC	PWM, 6							; skip if PWM < 64
 	RJMP	draw_loop_nextline				; line loop ended
-	SBIW	YL, 24							; YH:YL -= 24 back to address before 24 bit loop runs
-	//SUBI	YL, 24							; YL -= 24
-	//SBCI	YH, 0							; YH -= CARRY
+	SBIW	XL, 24							; YH:YL -= 24 back to address before 24 bit loop runs
 	RJMP	draw_loop_col					; next LINE
 
 draw_loop_nextline:							; line loop ended

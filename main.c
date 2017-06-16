@@ -64,25 +64,29 @@ ISR(TIMER0_OVF_vect, ISR_NAKED)
 		"STS (0x100 + %0), r0" "\n\t"
 		"POP r0" "\n\t"
 		 : :"M"(REG_TOV0C));
-	asm volatile("RETI");
 	//++counttmr;									// count (interrupt frequency 1/32768ns)
+	reti();										//	return and clear interrupt flag
 }
-ISR(TIMER0_COMPA_vect, ISR_ALIASOF(TIMER0_OVF_vect));	// TIMER0 COMParator A unused
-ISR(TIMER0_COMPB_vect, ISR_ALIASOF(TIMER0_OVF_vect));	// TIMER0 COMParator B unused
+ISR(TIMER0_COMPA_vect, ISR_ALIASOF(TIMER0_OVF_vect));	// TIMER0 COMParator A used on 4MHz CPU clock
+
+ISR(TIMER0_COMPB_vect, ISR_NAKED)				// TIMER0 COMParator B used to wakeup from sleep
+{
+	reti();										//	return and clear interrupt flag
+}
 
 ISR(WDT_vect, ISR_NAKED)
 {
 	//	without attribute ISR_NAKED registers get pushed, popped and RETI gets added
 	//	watchdog ISR is only used for wakeup from SLEEP
 	asm volatile(
-	"PUSH r0" "\n\t"
-	"LDS r0, (0x100 + %0)" "\n\t"
-	"INC r0" "\n\t"
-	"STS (0x100 + %0), r0" "\n\t"
-	"POP r0" "\n\t"
-	: :"M"(REG_WDC));
-	asm volatile("RETI");
+		"PUSH r0" "\n\t"
+		"LDS r0, (0x100 + %0)" "\n\t"
+		"INC r0" "\n\t"
+		"STS (0x100 + %0), r0" "\n\t"
+		"POP r0" "\n\t"
+		: :"M"(REG_WDC));
 	//++watchdog;									// count
+	reti();										//	return and clear interrupt flag
 }
 
 __fuse_t __fuse __attribute__((section (".fuse"))) =
@@ -117,19 +121,11 @@ __fuse_t __fuse __attribute__((section (".fuse"))) =
 int main(void)
 {
 	uint8_t _looping		= 0;				// local counter variable for main working loop
-#	if !defined(USE_SLEEP)
 	uint8_t _waitT0			= 0;				// local wait variable for main loop
-#	endif // !defined(USE_SLEEP)
 
 	/*	variable initialization and preparation
 	*/
-#	if defined(TWI_DATA_RAMPY)
-		i2creg.ptr	= (uint8_t*)&registers;		// set address of registers
-		DEC_i2caddr;							// decrement address - will be incremented before access
-#	else // defined(TWI_DATA_RAMPY)
-		i2cpage		= 0;						// set register page to 0
-		i2caddr		= 0xFF;						// set address of registers to -1 - will be incremented before access
-#	endif // defined(TWI_DATA_RAMPY)
+	i2creg.ptr		= (uint8_t*)&registers;		// i2cpage is always +1 (memory start of registers)
 	CLR_i2cflags;								// clear all flags
 
 	/*	configure clocks
@@ -154,6 +150,7 @@ int main(void)
 	TWHSR		= DEFAULT_TWHSR;				// TWHS bit flag defined in headers as TWIHS
 	TWBR		= DEFAULT_TWBR;					// TWI bit rate
 	TWAR		= FW_I2CSLA << 1;				// TWI slave address
+	TWAMR		= (I2C_MAXPAGE << 1);			// TWI slave address mask
 	TWCR		= _BV(TWEA) | _BV(TWEN) | _BV(TWINT) | _BV(TWIE);
 	//PRR			&= ~_BV(PRTWI);					// disable PRTWI flag bit
 
@@ -233,10 +230,8 @@ int main(void)
 	_looping	= 0;
 	while(TRUE)
 	{
-#	if !defined(USE_SLEEP)
 		//	_waitT0 is used to synchronize main loop to 100Hz
 		_waitT0			= TCNT0;				// current T0 counter on loop start
-#	endif // !defined(USE_SLEEP)
 
 #if !defined(NDEBUG) || defined(USE_REGWRITE)
 		/*	to keep watchdog in interrupt+reset mode, interrupt needs to be reenabled after every occureance
@@ -254,13 +249,14 @@ int main(void)
 			//	received new DATA in valid register
 			runflags.validreg	= 0;			// clear new data flag
 
-			if(0 < i2cpage)
+#if defined(USE_REGWRITE)
+#	if (1 < I2C_PAGES)
+			if(1 < i2cpage)						// first page on address 0x0100
 			{
 				// ignore everything not on first page
 			}
-
-#if defined(USE_REGWRITE)
 			else
+#	endif // (1 < I2C_PAGES)
 			{
 				write_registers();
 			}
@@ -284,36 +280,37 @@ int main(void)
 		}
 #endif // defined(USE_LEDREAD) || defined(USE_LEDWRITE)
 
-#if !defined(NDEBUG)
-		reg_ui8(0,0xCF)		= _looping;			// copy looping counter for debugging
-#endif // !defined(NDEBUG)
-
 #ifdef USE_SLEEP
 		if(0 == runflags.inprogress)
 		{
-			DDRD	= 0xFF;
-			PORTD	= 0x00;
+			DDRD		= 0xFF;
+			PORTD		= 0x00;
 			clr(PORTC, LED_OE_N);
 			// only if I2C operation ended and redraw unnecessary
 			sei();								// enable interrupts before SLEEP
-			SMCR	|= _BV(SE);					// enable SLEEP mode
-			TIMSK0	&= ~_BV(TOIE0);				// clear TOI0 interrupt enable flags
+			SMCR		|= _BV(SE);				// enable SLEEP mode
+			OCR0B		= _waitT0;				// set next wake up (to get 100Hz loop)
+#			if (I2C_HIGHSPEED)
+				OCR0B	+= 39;					// 39x256ys = ~10ms ==100Hz
+#			else // (I2C_HIGHSPEED)
+				OCR0B	+= 78;					// 78x128ys = ~10ms ==100Hz
+#			endif // (I2C_HIGHSPEED)
+			TIMSK0		|= _BV(OCIE0B);			// enable comparator at next 100Hz interval
 			sleep_cpu();						// sleep and wait for interrupt
-			_NOP();
 			_NOP();								// just to be sure a little delay after wake up from SLEEP
-			SMCR	&= ~_BV(SE);				// clear SLEEP enable flag
-			TIMSK0	|= _BV(TOIE0);				// set TOI0 interrupt enable flags
+			SMCR		&= ~_BV(SE);			// clear SLEEP enable flag
+			TIMSK0		&= ~_BV(OCIE0B);		// disable comparator
 		}
-#else
-#		if (I2C_HIGHSPEED)
-		while(39 > (uint8_t)(TCNT0 - _waitT0))
-#		else // (I2C_HIGHSPEED)
-		while(78 > (uint8_t)(TCNT0 - _waitT0))
-#		endif // (I2C_HIGHSPEED)
+#else // USE_SLEEP
+#	if (I2C_HIGHSPEED)
+		while(39 > (uint8_t)(TCNT0 - _waitT0))	// 39x256ys = ~10ms ==100Hz
+#	else // (I2C_HIGHSPEED)
+		while(78 > (uint8_t)(TCNT0 - _waitT0))	// 78x128ys = ~10ms ==100Hz
+#	endif // (I2C_HIGHSPEED)
 		{
 			_NOP();								// wait
 		}
-#endif
+#endif // USE_SLEEP
 
 		_looping++;								// count
 	}
